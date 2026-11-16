@@ -1,0 +1,398 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LATCHLINE | Customer Operations</title>
+  <style>
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Inter, Arial, sans-serif;
+      background: #080d17;
+      color: #f5f7fb;
+      min-height: 100vh;
+    }
+
+    header {
+      height: 76px;
+      padding: 0 7%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid #202a3b;
+      background: #0b1220;
+    }
+
+    .brand {
+      font-size: 23px;
+      font-weight: 800;
+      letter-spacing: 2px;
+    }
+
+    .brand span { color: #4da3ff; }
+
+    .status {
+      font-size: 12px;
+      color: #8d9bb0;
+    }
+
+    .status::before {
+      content: "";
+      display: inline-block;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #35cf91;
+      margin-right: 8px;
+    }
+
+    main {
+      max-width: 1150px;
+      margin: 75px auto;
+      padding: 0 22px;
+      display: grid;
+      grid-template-columns: 1fr 410px;
+      gap: 65px;
+      align-items: center;
+    }
+
+    .eyebrow {
+      color: #4da3ff;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 2px;
+    }
+
+    h1 {
+      font-size: clamp(38px, 5vw, 58px);
+      line-height: 1.08;
+      margin: 20px 0;
+    }
+
+    .description {
+      color: #9ba9bd;
+      font-size: 16px;
+      line-height: 1.8;
+      max-width: 490px;
+    }
+
+    .features {
+      display: grid;
+      gap: 15px;
+      margin-top: 35px;
+      color: #c6d0df;
+      font-size: 14px;
+    }
+
+    .features div::before {
+      content: "✓";
+      color: #4da3ff;
+      margin-right: 12px;
+      font-weight: bold;
+    }
+
+    .chat {
+      background: #111b2b;
+      border: 1px solid #29374c;
+      border-radius: 17px;
+      overflow: hidden;
+      box-shadow: 0 25px 80px #0008;
+    }
+
+    .chat-header {
+      padding: 19px;
+      background: #17263a;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .avatar {
+      width: 39px;
+      height: 39px;
+      border-radius: 11px;
+      background: #246fba;
+      display: grid;
+      place-items: center;
+      font-weight: 800;
+    }
+
+    .chat-header strong { display: block; font-size: 14px; }
+    .chat-header small { color: #9ba9bd; font-size: 11px; }
+
+    #messages {
+      height: 365px;
+      overflow-y: auto;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 13px;
+    }
+
+    .message {
+      padding: 12px 14px;
+      border-radius: 12px;
+      max-width: 88%;
+      font-size: 13px;
+      line-height: 1.6;
+      white-space: pre-wrap;
+    }
+
+    .bot {
+      background: #202e42;
+      align-self: flex-start;
+    }
+
+    .user {
+      background: #176fc1;
+      align-self: flex-end;
+    }
+
+    .options {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 0 18px 15px;
+    }
+
+    .options button {
+      background: #18283c;
+      border: 1px solid #38516e;
+      color: #dceaff;
+      padding: 9px 11px;
+      border-radius: 9px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    .options button:hover {
+      background: #24466b;
+    }
+
+    .input-area {
+      display: flex;
+      padding: 14px;
+      gap: 8px;
+      border-top: 1px solid #29374c;
+    }
+
+    input {
+      min-width: 0;
+      flex: 1;
+      background: #0b1422;
+      border: 1px solid #35445a;
+      color: white;
+      border-radius: 9px;
+      padding: 12px;
+      outline: none;
+    }
+
+    .send {
+      border: none;
+      border-radius: 9px;
+      background: #2688e8;
+      color: white;
+      padding: 0 16px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    footer {
+      text-align: center;
+      color: #65748a;
+      font-size: 11px;
+      padding: 25px;
+    }
+
+    @media(max-width: 800px) {
+      main {
+        grid-template-columns: 1fr;
+        margin: 45px auto;
+        gap: 35px;
+      }
+      header { padding: 0 20px; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="brand">LATCH<span>LINE</span></div>
+  <div class="status">PLUMBING DEMO</div>
+</header>
+
+<main>
+  <section>
+    <div class="eyebrow">AI CUSTOMER OPERATIONS PLATFORM</div>
+    <h1>Every inquiry<br>has a next step.</h1>
+    <p class="description">
+      Meet LATCHLINE: a customer operations assistant
+      designed to help plumbing businesses organize
+      inquiries, understand service requests, and guide
+      customers toward the right next step.
+    </p>
+
+    <div class="features">
+      <div>Customer inquiry handling</div>
+      <div>Structured lead collection</div>
+      <div>Urgency-aware conversations</div>
+      <div>Human handoff preparation</div>
+    </div>
+  </section>
+
+  <section class="chat">
+    <div class="chat-header">
+      <div class="avatar">L</div>
+      <div>
+        <strong>AquaFlow Plumbing</strong>
+        <small>LATCHLINE virtual assistant · Demo</small>
+      </div>
+    </div>
+
+    <div id="messages" aria-live="polite">
+      <div class="message bot">
+        Hello! Welcome to AquaFlow Plumbing.
+        I'm LATCHLINE, the virtual assistant.
+
+        How can I help you today?
+      </div>
+    </div>
+
+    <div class="options" id="options">
+      <button onclick="choose('I have a leak')">I have a leak</button>
+      <button onclick="choose('My drain is clogged')">Clogged drain</button>
+      <button onclick="choose('Water heater problem')">Water heater</button>
+      <button onclick="choose('I have another question')">Other question</button>
+    </div>
+
+    <form class="input-area" id="chatForm">
+      <input id="chatInput" placeholder="Type your message..." autocomplete="off">
+      <button class="send" type="submit">Send</button>
+    </form>
+  </section>
+</main>
+
+<footer>
+  LATCHLINE © 2026 · Demonstration interface · Not connected to live services
+</footer>
+
+<script>
+  const messages = document.getElementById("messages");
+  const options = document.getElementById("options");
+  const input = document.getElementById("chatInput");
+
+  let step = "issue";
+  let lead = {};
+
+  function addMessage(text, type) {
+    const div = document.createElement("div");
+    div.className = "message " + type;
+    div.textContent = text;
+    messages.appendChild(div);
+    messages.scrollTop = messages.scrollHeight;
+  }
+
+  function showOptions(items) {
+    options.innerHTML = "";
+    items.forEach(item => {
+      const button = document.createElement("button");
+      button.textContent = item;
+      button.onclick = () => choose(item);
+      options.appendChild(button);
+    });
+  }
+
+  function bot(text) {
+    addMessage(text, "bot");
+  }
+
+  function choose(text) {
+    addMessage(text, "user");
+    handle(text);
+  }
+
+  function handle(text) {
+    if (step === "issue") {
+      lead.issue = text;
+
+      if (/gas|carbon monoxide|electrical/i.test(text)) {
+        step = "emergency";
+        bot("Your safety comes first. Leave the affected area if there may be a gas leak or carbon monoxide exposure. For immediate danger, contact emergency services or your gas utility from a safe location. Stay away from electrical hazards.");
+        showOptions(["I am safe", "I need emergency help"]);
+        return;
+      }
+
+      step = "urgency";
+      bot("I'm sorry you're dealing with that. Is the problem happening right now, or can it wait?");
+      showOptions(["Happening right now", "It can wait"]);
+      return;
+    }
+
+    if (step === "urgency") {
+      lead.urgency = text;
+      step = "name";
+      bot("Understood. What is your full name?");
+      showOptions([]);
+      return;
+    }
+
+    if (step === "name") {
+      lead.name = text;
+      step = "phone";
+      bot("Thank you. What is the best phone number to reach you?");
+      return;
+    }
+
+    if (step === "phone") {
+      lead.phone = text;
+      step = "zip";
+      bot("What ZIP code is the plumbing service needed in?");
+      return;
+    }
+
+    if (step === "zip") {
+      lead.zip = text;
+      step = "confirm";
+      bot("Thank you. Here is a summary of your demo request:\n\n" +
+        "Name: " + lead.name + "\n" +
+        "Issue: " + lead.issue + "\n" +
+        "Urgency: " + lead.urgency + "\n" +
+        "Phone: " + lead.phone + "\n" +
+        "ZIP: " + lead.zip +
+        "\n\nThis is a demonstration only. Your request has not been sent to a plumbing company.");
+      showOptions(["Start a new request"]);
+      return;
+    }
+
+    if (step === "confirm" && text === "Start a new request") {
+      lead = {};
+      step = "issue";
+      bot("Of course! What plumbing issue can I help you with?");
+      showOptions(["I have a leak", "My drain is clogged", "Water heater problem", "Other question"]);
+      return;
+    }
+
+    if (step === "emergency") {
+      bot("Please prioritize your safety. This demo cannot contact emergency services or dispatch a technician.");
+      showOptions(["Start a new request"]);
+      step = "confirm";
+      return;
+    }
+
+    bot("Could you tell me a little more so I can understand your request?");
+  }
+
+  document.getElementById("chatForm").addEventListener("submit", function(event) {
+    event.preventDefault();
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = "";
+    choose(text);
+  });
+</script>
+
+</body>
+</html>
