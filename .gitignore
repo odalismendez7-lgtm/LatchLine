@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+
+# Secrets (never commit)
+.env
+.env.*
+.dev.vars
+*.pem
+*.key
+
+# Cloudflare / local state
+.wrangler/
+.mf/
+
+# Local data (never commit customer data or database exports)
+*.sqlite
+*.sqlite3
+*.db
+exports/
+backups/
+
+# Logs and OS files
+*.log
+npm-debug.log*
+.DS_Store
