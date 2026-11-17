@@ -1,6 +1,6 @@
 # Reliability and 24/7 Operation
 
-Last updated: 2026-11-16 · Status: DESIGN (only a basic `/health` endpoint exists)
+Last updated: 2026-11-17 · Status: DESIGN, plus an AI router implemented and tested (fallback, retries, timeouts, circuit breaker, explicit degraded result). Nothing else beyond a basic `/health` endpoint exists. The customer-facing degraded mode, monitoring, backups, and alerts are not built.
 
 **We never promise zero errors or uninterrupted availability.** We measure real performance and publish limitations. Targets below are goals to be measured, not guarantees.
 

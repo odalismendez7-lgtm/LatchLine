@@ -122,23 +122,23 @@ test("replies never claim a submission, notification or dispatch happened", asyn
 
 // ---------- Required behavior NOT yet implemented (expected to fail today) ----------
 
-test("emergency detection: 'I smell gas' phrasing is urgent", { todo: "regex only matches 'smell of gas'" }, async () => {
+test("emergency detection: 'I smell gas' phrasing is urgent", async () => {
   assert.equal(await urgent("I smell gas in my kitchen"), true);
 });
 
-test("emergency detection: carbon monoxide detector beeping is urgent", { todo: "regex only matches 'CO alarm'" }, async () => {
+test("emergency detection: carbon monoxide detector beeping is urgent", async () => {
   assert.equal(await urgent("My CO detector is going off"), true);
 });
 
-test("emergency detection: sewage backup is urgent", { todo: "no sewage/backup rule exists" }, async () => {
+test("emergency detection: sewage backup is urgent", async () => {
   assert.equal(await urgent("Sewage is coming up through my basement floor drain"), true);
 });
 
-test("no false emergency on an incidental 'electrical' mention", { todo: "any mention of 'electrical' triggers a shock warning" }, async () => {
+test("no false emergency on an incidental 'electrical' mention", async () => {
   assert.equal(await urgent("My electrical panel is fine but my sink drains slowly"), false);
 });
 
-test("missing business info (hours) is acknowledged and human help offered", { todo: "no knowledge base lookup; generic reply" }, async () => {
+test("missing business info (hours) is acknowledged and human help offered", async () => {
   const body = await (await chat("What are your hours?")).json();
   assert.match(body.reply, /confirm|don't want to give you incorrect|business team/i);
 });

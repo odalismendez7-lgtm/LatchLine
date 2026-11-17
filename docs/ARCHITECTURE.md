@@ -1,15 +1,26 @@
 # Architecture
 
-Last updated: 2026-11-16 · Status: PROPOSED (approved decisions are logged in `DECISIONS.md`)
+Last updated: 2026-11-17 · Status: PROPOSED (approved decisions are logged in `DECISIONS.md`)
 
-## Current state (Stage 0 prototype)
+## Current state (after Stage 2)
 
-- `index.html`: static demo page with a scripted, client-side chat. Does not call the backend.
-- `src/index.js`: Cloudflare Worker with `GET /health` and `POST /api/chat` (keyword rules, canned replies, origin allow-list, 1200-character limit).
-- `wrangler.toml`: Worker config.
-- No database, no authentication, no real AI, no tenant concept, no tests (until Stage 1 baseline tests).
+Built and tested (see `TEST_CASES.md`):
 
-Assessment: the **platform choice (Cloudflare Workers) is suitable** and kept. Almost all application logic is new.
+- `src/safety/detector.js` + `src/packs/plumbing.js`: deterministic emergency detector and the plumbing industry pack (rules, default procedures, intake fields). Runs before and independent of any AI.
+- `src/knowledge/`: knowledge-base schema and validation, retrieval of verified facts only, a tenant-scoped store, and a demo business with no verified facts.
+- `src/ai/`: provider interface, labeled mock provider, registry that refuses real providers, and a router with fallback, retries, timeouts, circuit breaker, and call recording.
+- `src/index.js`: the prototype Worker now uses the safety layer and knowledge retrieval for `/api/chat`. Origin allow-list, validation, and response shape are unchanged.
+
+Not built: database, authentication, tenant data layer, conversation engine (the model is not called anywhere yet), lead service, notifications, dashboard, rate limiting, entitlements, analytics, real widget. `index.html` is still the Stage 0 scripted demo and does not call the API.
+
+Assessment: the **platform choice (Cloudflare Workers) is suitable** and kept. See "Platform limits" below for what the free plan can and cannot support.
+
+## Platform limits (Cloudflare, read 2026-11-16; details in `PLANS_AND_PRICING.md`)
+
+- Workers Free: 100,000 requests/day, 10 ms CPU per request. Paid is $5/month minimum.
+- D1 Free: 100,000 rows written/day, 5 million read/day, 5 GB. Exceeding the daily limits returns errors until 00:00 UTC.
+- D1 Time Travel (automatic point-in-time restore): 7 days on Free, 30 days on Paid.
+- Consequence: Free is suitable for development and a small pilot, not paying customers. Moving to Paid costs money and needs founder approval.
 
 ## Target architecture
 
@@ -62,6 +73,10 @@ No item above is purchased or deployed. Nothing is public. If the free tier cann
 
 ## Open questions (need research, not guesses)
 
-- Free-tier limits and backup options for the chosen database/host.
+- Whether Cloudflare's free plan terms allow commercial use (not checked).
+- Pricing of R2 for exports beyond the Time Travel window (not researched).
 - Free notification path for development (mock now; real email/SMS later requires approval).
 - Dashboard framework.
+- Which AI model(s) to use: needs measured evaluation (`AI_MODEL_EVALUATIONS.md`).
+
+Resolved in Stage 2: free-tier limits and backup options for Workers and D1 (above).

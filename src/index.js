@@ -1,3 +1,7 @@
+import { detectEmergency, composeSafetyReply } from "./safety/detector.js";
+import { plumbingPack } from "./packs/plumbing.js";
+import { retrieve } from "./knowledge/retrieve.js";
+import { demoAquaflowKb } from "./knowledge/demo-aquaflow.js";
 
 const ALLOWED_ORIGINS = [
   "https://odalismendez7-lgtm.github.io"
@@ -19,26 +23,31 @@ function response(data, status, origin) {
   });
 }
 
+// Stage 2: the keyword rules that used to live here were replaced by the
+// deterministic safety layer and verified-knowledge retrieval (see
+// docs/KNOWN_ISSUES.md KI-1, KI-2, KI-4). This is still a PROTOTYPE: no AI
+// model, no database, and the demo business has no verified facts.
+const NOT_CONNECTED_NOTE =
+  "This demo isn't connected to the business team yet, so I can't pass your question on.";
+
 function answer(message) {
-  if (/gas leak|smell of gas|carbon monoxide|CO alarm/i.test(message)) {
+  // 1. Safety first, independent of everything else.
+  const safety = detectEmergency(message, { pack: plumbingPack });
+  if (safety.emergency) {
     return {
-      reply: "Your safety comes first. Leave the affected area and move to a safe location. Avoid switches, appliances, and ignition sources if you suspect a gas leak. Contact emergency services or your gas utility from a safe location.",
-      urgent: true
+      reply: composeSafetyReply(safety, { leadSystemConnected: false }),
+      urgent: true,
+      severity: safety.severity,
+      categories: safety.categories
     };
   }
 
-  if (/electrical|electric shock|sparking|live wire/i.test(message)) {
-    return {
-      reply: "Stay away from electrical equipment and water that may be in contact with electricity. Do not touch the hazard. Move to safety and contact emergency services if anyone is in immediate danger.",
-      urgent: true
-    };
-  }
-
-  if (/flood|burst pipe|major leak/i.test(message)) {
-    return {
-      reply: "This may need urgent attention. If safe and you know how, shut off the water supply. Keep away from electrical hazards. Is water still actively flowing?",
-      urgent: true
-    };
+  // 2. Answer only from verified knowledge; anything else is "needs confirmation".
+  const found = retrieve(demoAquaflowKb, message);
+  if (found.status !== "no_match") {
+    const texts = [...new Set(found.results.map((r) => r.text))];
+    if (found.results.some((r) => r.status === "unknown")) texts.push(NOT_CONNECTED_NOTE);
+    return { reply: texts.join(" "), urgent: false };
   }
 
   return {

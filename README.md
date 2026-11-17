@@ -6,7 +6,7 @@ LATCHLINE is an AI customer operations platform for service businesses, starting
 
 ## Status
 
-**Early development. Not production-ready.** Today the repo contains a prototype demo page and a keyword-based Worker, not a real AI. See `docs/FEATURE_STATUS.md` for exactly what exists.
+**Early development. Not production-ready.** The repo contains tested building blocks (emergency safety layer, verified-knowledge retrieval, AI provider interface with a mock) and a prototype Worker and demo page. No real AI is connected, nothing is deployed, and there is no database, login, or dashboard yet. See `docs/FEATURE_STATUS.md` for exactly what exists.
 
 ## Project records
 

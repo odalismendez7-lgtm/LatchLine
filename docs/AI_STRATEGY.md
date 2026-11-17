@@ -1,6 +1,6 @@
 # AI Strategy
 
-Last updated: 2026-11-16 · Status: DESIGN (nothing below is implemented yet; see `FEATURE_STATUS.md`)
+Last updated: 2026-11-17 · Status: DESIGN. Implemented so far: safety layer (`src/safety`), verified retrieval (`src/knowledge`), provider interface, mock, registry and router (`src/ai`). Not yet implemented: conversation state, response guard, lead summarizer, handoff policy, any real model call. See `FEATURE_STATUS.md`.
 
 The AI must be a major strength: purpose-built for plumbing customer operations, not a generic chatbot.
 
