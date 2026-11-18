@@ -14,9 +14,13 @@ Last updated: 2026-11-17 · Each stage ends with: what was built, files changed,
 | 6 | Entitlements/plans (no billing), analytics | Entitlement and metric-accuracy tests passing |
 | 7 | Security hardening (rate limits, validation, audit log), backup/restore drill, runbooks, readiness report | Full test matrix in `TEST_CASES.md` run and results recorded |
 
-## Next up (Stage 4 proposal, needs founder go-ahead)
+## Stage 4 (done, 2026-11-18): notifications and human handoff
 
-Notification outbox (mock first) and human handoff, so saved leads reach a person (KI-18); admin tooling to enter and verify a business's knowledge; honest degraded-mode details. Anything touching real D1, real email/SMS, or public hosting needs your explicit approval first.
+Provider-independent notifier adapter with a mock default, outbox with idempotency, retries and priorities, honest delivery statuses, handoff requests, emergency escalation, scheduled recovery. 574 tests pass. No real email/SMS provider exists. Carried forward: KI-18, KI-22 to KI-29.
+
+## Next up (Stage 5 proposal, needs founder go-ahead)
+
+Owner authentication and contact verification (KI-25), a dashboard showing leads, notification status and `needsAttention`, per-business notification budget and spam protection (KI-27). A real email provider (the adapter slot exists) only after a cost, privacy and terms review and your explicit approval.
 
 ## Future improvements (not scheduled)
 

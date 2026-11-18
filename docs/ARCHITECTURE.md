@@ -2,7 +2,7 @@
 
 Last updated: 2026-11-17 (Stage 3) · Status: PROPOSED (approved decisions are logged in `DECISIONS.md`)
 
-## Current state (after Stage 3)
+## Current state (after Stage 4)
 
 Built and tested (see `TEST_CASES.md`):
 
@@ -16,9 +16,19 @@ Built and tested (see `TEST_CASES.md`):
 - `src/app.js`: HTTP app (`createApp`): site key, per-business origins, limits, safety-on-429. `src/index.js` uses it when a D1 database is bound, otherwise stays the stateless prototype.
 - `scripts/dev-server.mjs`: local server on 127.0.0.1 with SQLite and the demo business; serves `index.html`, which calls `/api/chat` in that mode.
 
-Request flow: rate limit, size/JSON checks, site key to business, origin must be registered for that business, business limit, then the engine: normalize, safety, conversation (tenant handle), slots, answer, save + readback.
+Request flow (chat): rate limit, size/JSON checks, site key to business, origin must be registered for that business, business limit, then the engine: normalize, safety, conversation (tenant handle), slots, answer, save + readback.
 
-Not built: authentication, owner dashboard, notifications/handoff, entitlements, analytics, backups, embeddable widget, real AI, real D1 verification.
+Stage 4 additions:
+
+- `migrations/0002_notifications.sql`: `business_contacts`, `notifications` (outbox), `notification_attempts`, all with composite tenant foreign keys.
+- `src/db/notifications.js`: tenant-scoped outbox repository (idempotent enqueue, priority claim with leases, status transitions, `needsAttention`, `reconcileMissing`).
+- `src/notify/`: `provider.js` (interface, errors, validation), `mock.js`, `registry.js` (refuses real providers), `render.js` (safe text), `dispatcher.js` (send, retry, confirm), `status.js` (the only wording for statuses).
+- `src/engine/handoff.js` and engine changes: queue `new_lead`, `repeat_contact`, `human_requested` after the database confirms the lead; emergency leads at emergency priority to every verified channel.
+- `src/app.js`: best-effort dispatch after a queue (`waitUntil`) and `runScheduled()` (recovery + retries); `src/index.js` exports `scheduled` for the cron in `wrangler.toml`.
+
+Notification flow: lead saved and read back, then queued (separate step, retried on later turns, recovered by the sweep), then dispatcher claims by priority, renders from tenant data, calls the provider with the idempotency key, records `sent`, later records `delivered` only if the provider confirms.
+
+Not built: authentication, owner dashboard, contact verification, real notification providers, delivery webhooks, entitlements, analytics, backups, embeddable widget, real AI, real D1 verification.
 
 Assessment: Cloudflare Workers remains suitable. Real D1 behavior is untested (KI-15).
 

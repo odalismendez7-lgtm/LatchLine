@@ -5,16 +5,9 @@
 // "list all leads" method. The database also enforces tenant consistency with
 // composite foreign keys (migrations/0001_init.sql). Two layers, both tested.
 
-import { DbError, wrapDbError } from "./errors.js";
-
-const nowIso = () => new Date().toISOString();
-const newId = (prefix) => `${prefix}_${crypto.randomUUID().replace(/-/g, "")}`;
-const json = (v) => JSON.stringify(v ?? {});
-const parse = (s, fallback) => { try { return JSON.parse(s); } catch { return fallback; } };
-
-async function guard(fn) {
-  try { return await fn(); } catch (e) { throw wrapDbError(e); }
-}
+import { DbError } from "./errors.js";
+import { nowIso, newId, json, parse, guard } from "./util.js";
+import { notificationsRepo } from "./notifications.js";
 
 // ---------- platform level (not tenant data): resolve a public site key ----------
 
@@ -44,6 +37,17 @@ export function platformRepo(db) {
       if (typeof origin !== "string" || origin.length > 200) return false;
       return guard(async () => !!(await db.first(
         "SELECT 1 AS x FROM business_origins o JOIN businesses b ON b.id = o.business_id WHERE o.origin = ? AND b.status = 'active' LIMIT 1", [origin])));
+    },
+    async activeBusinessIds(limit = 500) {
+      return guard(async () => (await db.all("SELECT id FROM businesses WHERE status = 'active' ORDER BY id LIMIT ?", [Math.min(Math.max(1, limit | 0), 1000)])).map((r) => r.id));
+    },
+    // Dispatcher entry point: which businesses have notifications ready to send.
+    // Returns ids only; all further access goes through forBusiness(db, id).
+    async businessesWithDueNotifications(nowIsoString = nowIso(), limit = 50) {
+      return guard(async () => (await db.all(
+        `SELECT DISTINCT business_id FROM notifications
+          WHERE (status = 'queued' AND next_attempt_at <= ?) OR (status = 'sending' AND lease_until < ?) OR status = 'sent'
+          LIMIT ?`, [nowIsoString, nowIsoString, Math.min(Math.max(1, limit | 0), 200)])).map((r) => r.business_id));
     },
     async ping() { return guard(() => db.ping()); },
   });
@@ -189,5 +193,10 @@ export function forBusiness(db, businessId) {
     },
   };
 
-  return Object.freeze({ businessId: B, conversations: Object.freeze(conversations), leads: Object.freeze(leads), knowledge: Object.freeze(knowledge) });
+  const profile = async () => guard(async () => {
+    const r = await db.first("SELECT id, name, industry FROM businesses WHERE id = ?", [B]);
+    return r ?? null;
+  });
+
+  return Object.freeze({ businessId: B, profile, conversations: Object.freeze(conversations), leads: Object.freeze(leads), knowledge: Object.freeze(knowledge), notifications: notificationsRepo(db, B, leads) });
 }

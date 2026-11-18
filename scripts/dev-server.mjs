@@ -14,6 +14,7 @@ import { createApp } from "../src/app.js";
 import { MemoryStore, DbStore } from "../src/ratelimit/limiter.js";
 import { AIRouter } from "../src/ai/router.js";
 import { createProvider } from "../src/ai/registry.js";
+import { createNotifier, createChannelMap } from "../src/notify/registry.js";
 import { demoAquaflowKb } from "../src/knowledge/demo-aquaflow.js";
 
 export const DEV_SITE_KEY = "sk_demo_local_0001";
@@ -27,9 +28,12 @@ export async function startDevServer({ port = 8787, dbPath = ":memory:", host = 
   if (!(await platform.businessBySiteKey(DEV_SITE_KEY))) {
     await platform.createBusiness({ id: "demo-plumbing", name: "AquaFlow Plumbing (demo)", industry: "plumbing", siteKey: DEV_SITE_KEY, origins });
     await forBusiness(db, "demo-plumbing").knowledge.set(demoAquaflowKb);
+    // A verified SIMULATED contact so the notification flow can be exercised. The mock never sends anything.
+    await forBusiness(db, "demo-plumbing").notifications.contacts.add({ channel: "email", address: "owner@demo.invalid", verified: true });
   }
+  const notifier = createNotifier({ type: "mock" });
   const app = createApp({
-    db, store: new DbStore(db), salt: "dev-only-salt",
+    db, channels: createChannelMap([notifier]), store: new DbStore(db), salt: "dev-only-salt",
     router: new AIRouter({ providers: [createProvider({ type: "mock" })] }),
     ...(clientLimit ? { clientLimit } : {}),
   });
@@ -53,7 +57,9 @@ export async function startDevServer({ port = 8787, dbPath = ":memory:", host = 
     }
   });
   await new Promise((resolve) => server.listen(port, host, resolve));
-  return { server, db, port: server.address().port, close: () => new Promise((r) => server.close(r)) };
+  const timer = setInterval(() => { app.runScheduled().catch(() => {}); }, 5000);
+  timer.unref();
+  return { server, db, app, notifier, port: server.address().port, close: () => { clearInterval(timer); return new Promise((r) => server.close(r)); } };
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

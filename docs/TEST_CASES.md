@@ -1,6 +1,6 @@
 # Test Cases and Results
 
-Last updated: 2026-11-17 (Stage 3)
+Last updated: 2026-11-18 (Stage 4)
 
 Run all tests: `npm test` (Node 22.5+, no dependencies, no network, no cost).
 
@@ -14,17 +14,51 @@ Rule: nothing is called production-ready unless the required checks below have p
 | Incorrect or missing information | Validation tests (96) and in-conversation rejections pass: bad phones, names, ZIPs, injection-like names. ZIP outside the verified list is stored "unconfirmed", never refused |
 | Emergency conversations | 164 safety tests pass (99 + 65 Stage 3: Spanish, water heater, generic emergency, negation fixes). Engine tests confirm safety replies work with the database down, the AI down, and the message cap reached |
 | Lead capture | Pass: saved only after transaction + readback; failures reported as NOT saved; retry after recovery saves once; fake-success database detected |
-| Failed notifications | Not built (no notifications, KI-18) |
-| Human handoff | Not built |
+| Failed notifications | Pass with the mock: provider outage, permanent error, malformed response, timeout, unknown exception, database failure before/after provider acceptance, crashed dispatcher (lease), retry/backoff, exhaustion to `failed` and `needsAttention`. Real providers untested (KI-24) |
+| Human handoff | Pass: phrase detection (positive and negative), honest "cannot connect live", handoff notification queued with the lead, repeated requests deduplicated, "NOT received" when it cannot be recorded, emergency priority carried. No live transfer exists |
 | AI service outages | Router tests plus engine tests: outage gives an honest fallback and a degraded flag; mock text hidden; unsafe AI replies replaced |
 | Duplicate leads | Pass: merge by phone/email, window, identical customer reply, no cross-business merging. Race between simultaneous conversations not tested (KI-20) |
-| Unauthorized access (including cross-business) | Pass at the data layer and API: cross-tenant read/write/merge denied, composite foreign keys with raw SQL, SQL spy, hostile ids, site key/origin mismatch, suspended business. No owner authentication exists to test |
+| Unauthorized access (including cross-business) | Pass at the data layer and API (now including the notification outbox: contacts, enqueue, claim, settle, reconcile, SQL spy, composite foreign keys, messages built from the right business only): cross-tenant read/write/merge denied, composite foreign keys with raw SQL, SQL spy, hostile ids, site key/origin mismatch, suspended business. No owner authentication exists to test |
 | Prompt injection | Worker, engine, and safety tested with injection strings against the mock. Not tested against a real model |
 | Mobile and desktop interfaces | 19 browser tests (Chromium via Playwright) at 1280x800 and 375x700: live chat, emergency text, lead flow, XSS-as-text, offline/429/unreachable messages, no horizontal scroll. Visual review by a person not done |
 | Rate limiting | Pass: burst 429 with Retry-After, window rollover, per-business limit, DB-backed store, store failure fallback. Not load-tested |
 | Backup restore drill | Not built |
 
 ## Result log
+
+### 2026-11-18: Stage 4
+
+Command: `npm test` on Node v22.23.4, run after the last code change.
+
+| File | Tests | Pass | Fail | TODO |
+|---|---|---|---|---|
+| `tests/safety.test.mjs` | 99 | 99 | 0 | 0 |
+| `tests/safety.stage3.test.mjs` | 65 | 65 | 0 | 0 |
+| `tests/validation.test.mjs` | 96 | 96 | 0 | 0 |
+| `tests/knowledge.test.mjs` | 32 | 32 | 0 | 0 |
+| `tests/ai-provider.test.mjs` | 27 | 27 | 0 | 0 |
+| `tests/db.test.mjs` | 29 | 29 | 0 | 0 |
+| `tests/ratelimit.test.mjs` | 13 | 13 | 0 | 0 |
+| `tests/engine.test.mjs` | 40 | 40 | 0 | 0 |
+| `tests/app.test.mjs` | 25 | 25 | 0 | 0 |
+| `tests/ui.test.mjs` | 19 | 19 | 0 | 0 |
+| `tests/baseline.worker.test.mjs` | 19 | 19 | 0 | 0 |
+| `tests/worker.stage2.test.mjs` | 4 | 4 | 0 | 0 |
+| `tests/notifications.repo.test.mjs` | 30 | 30 | 0 | 0 |
+| `tests/notify.provider.test.mjs` | 21 | 21 | 0 | 0 |
+| `tests/notify.dispatcher.test.mjs` | 31 | 31 | 0 | 0 |
+| `tests/notify.integration.test.mjs` | 24 | 24 | 0 | 0 |
+| **Total** | **574** | **574** | **0** | **0** |
+
+Mutation checks on the Stage 4 code: 34 deliberate breakages (idempotency removed, emergency fan-out reduced, verified-contact check removed, priority ordering, lease/attempt guards, retry limit, delivery-state guard, error-code sanitizing, attention list, tenant scoping of reads, reconcile filter, idempotency key reuse, delivery confirmation logic, provider timeout, provider-identity check, control-character stripping, wording of statuses and emergency text, registry refusal, handoff detection and denial patterns, engine priority and kind mapping, pending-retry logic, API exposure of internal flags). First run: 30 killed, 4 survived. All 4 were real test gaps (lead-missing path, receipt from a different provider, control-character stripping, wording for a real non-simulated provider); tests were added and all 4 are now killed. A bug found while writing tests: the "sending" status text said "not yet accepted by the provider", which is wrong in the case where the provider had accepted but the database write failed; the wording was corrected.
+
+What this run does NOT show:
+- No real email or SMS provider exists; nothing real was ever sent. Delivery confirmation exists only for the mock (KI-24).
+- Nothing ran on real D1 or the real Workers runtime; cron and `waitUntil` dispatch are untested there (KI-15, KI-28).
+- Contact verification, owner login and a dashboard do not exist, so businesses are `undeliverable` in practice (KI-25).
+- No load or long-run test; no real transcripts.
+- The same author wrote the code and the tests; no independent review has happened.
+- This is not evidence the product is production-ready. It is not.
 
 ### 2026-11-17: Stage 3
 

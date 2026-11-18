@@ -2,3 +2,8 @@
 name = "latchline"
 main = "src/index.js"
 compatibility_date = "2026-11-16"
+
+# Retries and recovery for the notification outbox. Only takes effect if the Worker is deployed
+# (not done; needs founder approval). Cron triggers are available on the free plan.
+[triggers]
+crons = ["*/5 * * * *"]

@@ -1,6 +1,6 @@
 # Reliability and 24/7 Operation
 
-Last updated: 2026-11-17 (Stage 3) · Status: DESIGN, plus implemented and tested: AI router, honest degraded replies in the engine (AI down, database down, lead not saved), rate-limit store fallback, honest `/health`. Monitoring, backups, alerts, and notifications are not built.
+Last updated: 2026-11-18 (Stage 4) · Status: DESIGN, plus implemented and tested: AI router, honest degraded replies in the engine (AI down, database down, lead not saved), rate-limit store fallback, honest `/health`. Monitoring, backups, alerts, and notifications are not built.
 
 **We never promise zero errors or uninterrupted availability.** We measure real performance and publish limitations. Targets below are goals to be measured, not guarantees.
 
@@ -33,6 +33,10 @@ Last updated: 2026-11-17 (Stage 3) · Status: DESIGN, plus implemented and teste
 - Database down at the start: safety guidance still returned; customer told nothing can be saved; no conversation id issued; `/health` returns 503.
 - Lead write fails or the database lies about success: customer told the business has NOT received the details, verified phone offered if known; the next message retries and saves once.
 - Rate-limit store down: falls back to per-instance memory counts and reports degraded.
+- Notification provider outage: retried with backoff (emergency 15 s to 15 min, normal 1 min to 1 hour, 5 or 8 attempts), then `failed` and listed in `needsAttention`. The customer's reply is unaffected.
+- Database failure while queueing: the lead stays saved, the engine retries queueing on later turns, and a scheduled sweep recovers leads with no notification.
+- Database failure after a provider accepted: row stays `sending`, re-sent after the lease with the same idempotency key (at-least-once, KI-22).
+- Crashed dispatcher: lease expiry reclaims the row; the dead attempt is recorded.
 - Not yet: a "captured without AI" lead mode (the engine collects the same fields with or without AI, but there is no marker), notifications, backups, metrics.
 
 ## Measurement (to be built)

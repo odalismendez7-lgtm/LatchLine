@@ -7,6 +7,7 @@ import { D1Adapter } from "./db/d1-adapter.js";
 import { DbStore, MemoryStore, createLimiter, hashKey } from "./ratelimit/limiter.js";
 import { AIRouter } from "./ai/router.js";
 import { createProvider } from "./ai/registry.js";
+import { createNotifier, createChannelMap } from "./notify/registry.js";
 
 // Two modes, chosen by whether a D1 database is bound as env.DB:
 //   - no DB bound  -> the stateless PROTOTYPE below (what runs today; no storage)
@@ -23,6 +24,8 @@ function getApp(env) {
         store: new DbStore(db),
         salt: env.RATE_LIMIT_SALT || "",
         router: new AIRouter({ providers: [createProvider({ type: "mock" })] }),
+        // Mock notifier only: nothing is ever actually sent. Real providers are refused by the registry.
+        channels: createChannelMap([createNotifier({ type: "mock" })]),
       }),
     };
   }
@@ -85,6 +88,13 @@ function answer(message) {
 }
 
 export default {
+  // Cron entry (retries + recovery). Only meaningful once deployed with a D1 binding; not deployed today.
+  async scheduled(event, env, ctx) {
+    if (!env || !env.DB || !env.RATE_LIMIT_SALT || env.RATE_LIMIT_SALT.length < 8) return;
+    const p = getApp(env).runScheduled();
+    ctx?.waitUntil?.(p);
+    await p;
+  },
   async fetch(request, env) {
     if (env && env.DB) {
       if (!env.RATE_LIMIT_SALT || env.RATE_LIMIT_SALT.length < 8) {

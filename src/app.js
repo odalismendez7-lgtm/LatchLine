@@ -13,6 +13,7 @@ import { createLimiter, hashKey } from "./ratelimit/limiter.js";
 import { KnowledgeStore } from "./knowledge/store.js";
 import { validateKnowledgeBase } from "./knowledge/schema.js";
 import { forBusiness } from "./db/tenant.js";
+import { dispatchDue } from "./notify/dispatcher.js";
 import { plumbingPack } from "./packs/plumbing.js";
 import { detectEmergency, composeSafetyReply } from "./safety/detector.js";
 import { normalizeMessage } from "./validation/normalize.js";
@@ -20,7 +21,7 @@ import { normalizeMessage } from "./validation/normalize.js";
 const MAX_BODY_BYTES = 8 * 1024;
 const PACKS = { plumbing: plumbingPack };
 
-export function createApp({ db, router = null, store, salt, clientLimit = { limit: 30, windowMs: 60_000 }, businessLimit = { limit: 600, windowMs: 60_000 }, now = Date.now, showMockReplies = false, extraKnownOrigins = [] }) {
+export function createApp({ db, router = null, store, salt, clientLimit = { limit: 30, windowMs: 60_000 }, businessLimit = { limit: 600, windowMs: 60_000 }, now = Date.now, showMockReplies = false, extraKnownOrigins = [], channels = null }) {
   if (typeof salt !== "string" || salt.length < 8) throw new Error("createApp needs a salt of at least 8 characters");
   const platform = platformRepo(db);
   const clientLimiter = createLimiter({ store, ...clientLimit, now });
@@ -77,8 +78,32 @@ export function createApp({ db, router = null, store, salt, clientLimit = { limi
     } catch { return null; }
   }
 
+  // Notifications: best-effort dispatch right after a lead/handoff is queued, plus
+  // a scheduled run for retries. Dispatch failures never change the customer's reply.
+  const pending = new Set();
+  const kick = (ctx) => {
+    if (!channels) return;
+    const p = dispatchDue({ db, channels, now: () => new Date(now()).toISOString() }).catch(() => {}).finally(() => pending.delete(p));
+    pending.add(p);
+    try { ctx?.waitUntil?.(p); } catch { /* ignore */ }
+  };
+
+  async function runScheduled() {
+    const out = { reconciled: 0, errors: [], dispatch: null };
+    try {
+      for (const id of await platform.activeBusinessIds()) {
+        try { out.reconciled += (await forBusiness(db, id).notifications.reconcileMissing({ now: new Date(now()).toISOString() })).enqueued; }
+        catch { if (!out.errors.includes("reconcile_failed")) out.errors.push("reconcile_failed"); }
+      }
+    } catch { out.errors.push("database_unavailable"); }
+    out.dispatch = channels ? await dispatchDue({ db, channels, now: () => new Date(now()).toISOString() }) : null;
+    return out;
+  }
+
   return {
-    async fetch(request) {
+    runScheduled,
+    idle: () => Promise.all([...pending]),
+    async fetch(request, ctx) {
       const url = new URL(request.url);
       const origin = request.headers.get("Origin") || "";
 
@@ -134,10 +159,11 @@ export function createApp({ db, router = null, store, salt, clientLimit = { limi
             { db, businessId: business.id, kb, router, pack: PACKS[business.industry] ?? plumbingPack, showMockReplies },
             { message: body.message, conversationId: typeof body.conversationId === "string" ? body.conversationId.slice(0, 80) : null }
           );
+          if (result.notificationsQueued) kick(ctx);
           if (!result.ok) return json({ error: "Message must be 1–1200 characters", code: result.error }, 400, origin);
           return json({
             reply: result.reply, conversationId: result.conversationId, urgent: result.urgent,
-            leadStatus: result.leadStatus, persisted: result.persisted, degraded: result.degraded,
+            leadStatus: result.leadStatus, persisted: result.persisted, degraded: { database: result.degraded.database, ai: result.degraded.ai },
             mode: "development", notice: "Development build: mock AI only, not production-ready.",
           }, 200, origin);
         }

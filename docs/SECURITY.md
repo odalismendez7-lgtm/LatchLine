@@ -1,6 +1,6 @@
 # Security Requirements
 
-Last updated: 2026-11-17 (Stage 3) · Status: REQUIREMENTS, partly implemented (see the table below). Not security-reviewed by anyone independent.
+Last updated: 2026-11-18 (Stage 4) · Status: REQUIREMENTS, partly implemented (see the table below). Not security-reviewed by anyone independent.
 
 This repository may be **public**. Never commit secrets, customer data, real business data, or database exports.
 
@@ -30,7 +30,8 @@ This repository may be **public**. Never commit secrets, customer data, real bus
 | API protection | Per-client and per-business rate limits, 429 + Retry-After, 8 KB body limit, strict JSON checks, per-business CORS, no internals in errors, `no-store`/`nosniff` | IP-based limits only; origin is not authentication (KI-6); no bot protection |
 | Input validation | Message, phone, email, ZIP, name validators; text stored as inert data (render must escape; the demo page uses `textContent`) | Dashboard output escaping not built |
 | AI-specific | Customer text only in user messages; guard rejects promises/prices/times/phones/links; mock text hidden | Never tested against a real model (KI-19) |
-| Audit | Business, lead, knowledge events without customer values | Logins/permission failures (no auth) |
+| Audit | Business, lead, knowledge, contact, and notification events without customer values or addresses | Logins/permission failures (no auth) |
+| Notifications | Per-business outbox with composite foreign keys; only verified, enabled contacts used; text built only from that business's own lead; header/control-character stripping; idempotent; error codes only (no text) stored; real providers refused by the registry | Contact verification flow (KI-25); notification volume caps (KI-27); privacy review (KI-26); webhook signature checks (none exist yet) |
 | Privacy | Only needed fields collected; no passwords or cards requested | No retention/deletion policy, no encryption at app level, plain-text PII (KI-17) |
 
 ## Known weaknesses today

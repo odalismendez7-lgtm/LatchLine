@@ -22,6 +22,7 @@ import { normalizeMessage, normalizeName, sanitizeText, MAX_ISSUE_CHARS } from "
 import { extractContact, extractName, extractUrgency, isMostlyContactData } from "./extract.js";
 import { guardAiReply } from "./guard.js";
 import { forBusiness } from "../db/tenant.js";
+import { wantsHuman } from "./handoff.js";
 
 export const MAX_MESSAGES_PER_CONVERSATION = 60;
 const HISTORY_TURNS = 4;
@@ -32,6 +33,9 @@ const TEXT = {
   notSaved: "I wasn't able to save your details just now, so the business has NOT received them.",
   noDb: "I can't save your details right now, so I can't pass anything to the business from this chat.",
   limited: "This chat has reached its length limit. I can't take more messages here.",
+  handoffNeedDetails: "I can't connect you to a person live from this chat. I can record a request for a person at the business to review once I have your details.",
+  handoffRecorded: "Your request to speak with a person has been recorded for the business team. I can't promise when they will respond.",
+  handoffNotSaved: "I wasn't able to record your request for a person just now, so the business has NOT received it.",
   generic: "I can help organize your plumbing inquiry for the business team. I can't schedule visits or give prices myself.",
   aiDown: "I can't look that up right now.",
   nameAgain: "I didn't catch a name. Please type your first and last name.",
@@ -49,7 +53,7 @@ const PROMPTS = {
 };
 const ORDER = ["issue", "name", "phone", "zip", "urgency"];
 
-const initialState = () => ({ stage: "collecting", slots: {}, awaiting: null, emergency: null, history: [] });
+const initialState = () => ({ stage: "collecting", slots: {}, awaiting: null, emergency: null, history: [], handoff: false, leadId: null, pendingNotifications: [] });
 
 function missingSlots(slots) {
   return ORDER.filter((k) => slots[k] === undefined || slots[k] === null || slots[k] === "");
@@ -125,7 +129,7 @@ export async function handleMessage(deps, input) {
 
   const state = { ...initialState(), ...conv.state, slots: { ...(conv.state?.slots ?? {}) } };
   state.history = Array.isArray(state.history) ? state.history : [];
-  const degraded = { database: false, ai: false };
+  const degraded = { database: false, ai: false, notifications: false };
 
   const finish = async (reply, extra = {}) => {
     let persisted = true;
@@ -133,16 +137,41 @@ export async function handleMessage(deps, input) {
     try {
       await tenant.conversations.addMessage(conv.id, { role: "customer", content: message, meta: safety.emergency ? { emergency: safety.categories } : {} });
       await tenant.conversations.addMessage(conv.id, { role: "assistant", content: reply, meta: {} });
-      await tenant.conversations.save(conv.id, { state, status: state.stage === "done" ? "closed" : (conv.messageCount + 2 >= MAX_MESSAGES_PER_CONVERSATION ? "limited" : (state.emergency ? "needs_human" : "open")), urgent: !!state.emergency });
+      await tenant.conversations.save(conv.id, { state, status: state.stage === "done" ? (state.emergency || state.handoff ? "needs_human" : "closed") : (conv.messageCount + 2 >= MAX_MESSAGES_PER_CONVERSATION ? "limited" : (state.emergency || state.handoff ? "needs_human" : "open")), urgent: !!state.emergency });
     } catch {
       persisted = false;
       degraded.database = true;
     }
-    return { ok: true, reply, conversationId: conv.id, urgent: !!state.emergency, persisted, degraded, leadStatus: state.leadStatus ?? "collecting", ...extra };
+    return { ok: true, reply, conversationId: conv.id, urgent: !!state.emergency, persisted, degraded, leadStatus: state.leadStatus ?? "collecting", handoff: !!state.handoff, notificationsQueued: queuedNow > 0, ...extra };
   };
 
   if (safety.emergency && !state.emergency) state.emergency = { categories: safety.categories, severity: safety.severity };
   else if (safety.emergency) state.emergency = { categories: [...new Set([...state.emergency.categories, ...safety.categories])], severity: safety.severity };
+
+  const asksForHuman = wantsHuman(message);
+  if (asksForHuman) state.handoff = true;
+  const priority = () => (state.emergency ? "emergency" : state.slots.urgency === "now" ? "urgent" : "normal");
+
+  // Retry any notification that could not be queued on an earlier turn.
+  const flushPending = async () => {
+    if (!state.pendingNotifications.length || !state.leadId) return;
+    const still = [];
+    for (const p of state.pendingNotifications) {
+      try { await tenant.notifications.enqueueForLead({ leadId: state.leadId, conversationId: conv.id, kind: p.kind, priority: p.priority }); }
+      catch { still.push(p); }
+    }
+    state.pendingNotifications = still;
+  };
+  let queuedNow = 0;
+  const queue = async (kind) => {
+    try { await tenant.notifications.enqueueForLead({ leadId: state.leadId, conversationId: conv.id, kind, priority: priority() }); queuedNow += 1; return true; }
+    catch {
+      state.pendingNotifications = [...state.pendingNotifications.filter((p) => p.kind !== kind), { kind, priority: priority() }];
+      degraded.notifications = true;
+      return false;
+    }
+  };
+  await flushPending();
 
   const safetyReply = safety.emergency ? composeSafetyReply(safety, { leadSystemConnected: true }) : "";
 
@@ -162,7 +191,7 @@ export async function handleMessage(deps, input) {
     if (found.zip) state.slots.zip = found.zip;
 
     let retried = null;
-    let consumed = Object.keys(found).length > 0;
+    let consumed = Object.keys(found).length > 0 || asksForHuman;
     const isQuestion = /\?\s*$/.test(message);
     if (state.awaiting === "name" && !state.slots.name) {
       const n = extractName(message);
@@ -183,8 +212,8 @@ export async function handleMessage(deps, input) {
     const kbResult = kb ? kb.retrieve(message) : { status: "no_match", results: [] };
     if (!state.slots.issue) {
       const contactOnly = isMostlyContactData(message, found);
-      const firstFreeText = !state.awaiting && kbResult.status === "no_match" && !contactOnly && !isQuestion && message.split(/\s+/).length >= 3;
-      if ((state.awaiting === "issue" && !contactOnly && !isQuestion) || safety.emergency || firstFreeText) {
+      const firstFreeText = !asksForHuman && !state.awaiting && kbResult.status === "no_match" && !contactOnly && !isQuestion && message.split(/\s+/).length >= 3;
+      if ((state.awaiting === "issue" && !contactOnly && !isQuestion && !asksForHuman) || safety.emergency || firstFreeText) {
         state.slots.issue = sanitizeText(message, { maxLength: MAX_ISSUE_CHARS });
         consumed = true;
       }
@@ -202,6 +231,7 @@ export async function handleMessage(deps, input) {
       }
     }
 
+    if (asksForHuman && !state.leadId) parts.push(TEXT.handoffNeedDetails);
     if (retried === "name") parts.push(TEXT.nameAgain);
     if (retried === "phone") parts.push(TEXT.phoneAgain);
     if (retried === "zip") parts.push(TEXT.zipAgain);
@@ -215,7 +245,11 @@ export async function handleMessage(deps, input) {
         state.stage = "done";
         state.awaiting = null;
         state.leadStatus = saved.kind;
+        state.leadId = saved.leadId;
+        await queue(saved.kind === "saved" ? "new_lead" : "repeat_contact");
+        if (state.handoff) await queue("human_requested");
         parts.push(state.emergency ? TEXT.recordedEmergency : TEXT.recorded);
+        if (state.handoff) parts.push("Your request to speak with a person is included, but I can't promise when anyone will respond.");
       } else {
         state.leadStatus = "not_saved";
         degraded.database = true;
@@ -228,7 +262,8 @@ export async function handleMessage(deps, input) {
     }
   } else {
     // already done: answer from verified knowledge only; no second lead for this conversation
-    if (!safety.emergency) {
+    if (asksForHuman) parts.push((await queue("human_requested")) ? TEXT.handoffRecorded : `${TEXT.handoffNotSaved} ${contactAdvice(kb)}`.trim());
+    if (!safety.emergency && !asksForHuman) {
       const kbResult = kb ? kb.retrieve(message) : { status: "no_match", results: [] };
       parts.push(kbResult.status !== "no_match"
         ? [...new Set(kbResult.results.map((r) => r.text))].join(" ")
@@ -257,7 +292,7 @@ async function saveLead({ tenant, conv, state, kb }) {
     const dup = await tenant.leads.findDuplicate({ phone: s.phone, email: s.email });
     if (dup && dup.conversationId !== conv.id) {
       await tenant.leads.mergeDuplicate(dup.id, conv.id, { note: String(s.issue).slice(0, MAX_ISSUE_CHARS) });
-      return { ok: true, kind: "recorded_existing" };
+      return { ok: true, kind: "recorded_existing", leadId: dup.id };
     }
     const r = await tenant.leads.create(conv.id, {
       name: s.name, phone: s.phone, email: s.email ?? null, zip: s.zip,
@@ -267,7 +302,7 @@ async function saveLead({ tenant, conv, state, kb }) {
       zipInVerifiedArea: zipIn,
       summary: `${s.name} (${s.phone}) ${s.zip}: ${String(s.issue).slice(0, 200)}`,
     });
-    return { ok: true, kind: "saved", id: r.id }; // create() throws unless the readback matched
+    return { ok: true, kind: "saved", leadId: r.id }; // create() throws unless the readback matched
   } catch {
     return { ok: false };
   }
