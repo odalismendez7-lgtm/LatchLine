@@ -1,19 +1,26 @@
 # Architecture
 
-Last updated: 2026-11-17 · Status: PROPOSED (approved decisions are logged in `DECISIONS.md`)
+Last updated: 2026-11-17 (Stage 3) · Status: PROPOSED (approved decisions are logged in `DECISIONS.md`)
 
-## Current state (after Stage 2)
+## Current state (after Stage 3)
 
 Built and tested (see `TEST_CASES.md`):
 
-- `src/safety/detector.js` + `src/packs/plumbing.js`: deterministic emergency detector and the plumbing industry pack (rules, default procedures, intake fields). Runs before and independent of any AI.
-- `src/knowledge/`: knowledge-base schema and validation, retrieval of verified facts only, a tenant-scoped store, and a demo business with no verified facts.
-- `src/ai/`: provider interface, labeled mock provider, registry that refuses real providers, and a router with fallback, retries, timeouts, circuit breaker, and call recording.
-- `src/index.js`: the prototype Worker now uses the safety layer and knowledge retrieval for `/api/chat`. Origin allow-list, validation, and response shape are unchanged.
+- `src/safety/` + `src/packs/plumbing.js`: deterministic emergency detector (English and Spanish) and the plumbing industry pack. Runs before and independent of any AI or database.
+- `src/validation/normalize.js`: validation and normalization of messages, phones (US), emails, ZIPs, names.
+- `src/knowledge/`: schema, verified-only retrieval, tenant-scoped store.
+- `src/ai/`: provider interface, labeled mock, registry refusing real providers, router (fallback, retries, timeouts, circuit breaker).
+- `src/db/` + `migrations/0001_init.sql`: adapter interface with SQLite (dev/tests) and D1 (unverified) adapters; `forBusiness` tenant handles; composite foreign keys; append-only audit log.
+- `src/ratelimit/`: fixed-window limiter with memory and database stores.
+- `src/engine/`: conversation engine (slots, KB answers, guarded AI, lead save with readback, dedupe, honest failures).
+- `src/app.js`: HTTP app (`createApp`): site key, per-business origins, limits, safety-on-429. `src/index.js` uses it when a D1 database is bound, otherwise stays the stateless prototype.
+- `scripts/dev-server.mjs`: local server on 127.0.0.1 with SQLite and the demo business; serves `index.html`, which calls `/api/chat` in that mode.
 
-Not built: database, authentication, tenant data layer, conversation engine (the model is not called anywhere yet), lead service, notifications, dashboard, rate limiting, entitlements, analytics, real widget. `index.html` is still the Stage 0 scripted demo and does not call the API.
+Request flow: rate limit, size/JSON checks, site key to business, origin must be registered for that business, business limit, then the engine: normalize, safety, conversation (tenant handle), slots, answer, save + readback.
 
-Assessment: the **platform choice (Cloudflare Workers) is suitable** and kept. See "Platform limits" below for what the free plan can and cannot support.
+Not built: authentication, owner dashboard, notifications/handoff, entitlements, analytics, backups, embeddable widget, real AI, real D1 verification.
+
+Assessment: Cloudflare Workers remains suitable. Real D1 behavior is untested (KI-15).
 
 ## Platform limits (Cloudflare, read 2026-11-16; details in `PLANS_AND_PRICING.md`)
 
@@ -67,7 +74,9 @@ Owner API (authenticated) <--- Dashboard (web)            Notifier adapters (moc
 
 No item above is purchased or deployed. Nothing is public. If the free tier cannot support something, we record exactly what is missing and what it would cost.
 
-## Planned data model (summary)
+## Data model
+
+Implemented in `migrations/0001_init.sql`: `businesses`, `business_origins`, `knowledge_bases`, `conversations`, `messages`, `leads`, `lead_events`, `audit_log`, `rate_limits`. Planned, not built:
 
 `businesses`, `users`, `memberships` (user↔business, role), `sessions`, `knowledge_facts` (typed, verified flag, verified_by/at), `knowledge_faqs`, `conversations`, `messages`, `leads` (with dedupe key), `handoffs`, `notifications_outbox` (status, attempts, last_error), `plans`, `plan_entitlements`, `business_subscriptions`, `usage_counters`, `audit_log`, `ai_calls` (provider, model, latency, tokens).
 

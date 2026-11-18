@@ -143,13 +143,13 @@ test("missing business info (hours) is acknowledged and human help offered", asy
   assert.match(body.reply, /confirm|don't want to give you incorrect|business team/i);
 });
 
-test("chat endpoint rate-limits a burst from one client", { todo: "no rate limiting exists" }, async () => {
+test("chat endpoint rate-limits a burst from one client", async () => {
   const statuses = [];
   for (let i = 0; i < 60; i++) statuses.push((await chat("hello")).status);
   assert.ok(statuses.includes(429), "expected at least one HTTP 429");
 });
 
-test("demo page actually calls the backend /api/chat", { todo: "index.html uses a local scripted flow and never calls the API" }, async () => {
+test("demo page actually calls the backend /api/chat", async () => {
   const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
   assert.match(html, /\/api\/chat/);
 });

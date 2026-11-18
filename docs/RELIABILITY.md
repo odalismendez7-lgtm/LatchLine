@@ -1,6 +1,6 @@
 # Reliability and 24/7 Operation
 
-Last updated: 2026-11-17 · Status: DESIGN, plus an AI router implemented and tested (fallback, retries, timeouts, circuit breaker, explicit degraded result). Nothing else beyond a basic `/health` endpoint exists. The customer-facing degraded mode, monitoring, backups, and alerts are not built.
+Last updated: 2026-11-17 (Stage 3) · Status: DESIGN, plus implemented and tested: AI router, honest degraded replies in the engine (AI down, database down, lead not saved), rate-limit store fallback, honest `/health`. Monitoring, backups, alerts, and notifications are not built.
 
 **We never promise zero errors or uninterrupted availability.** We measure real performance and publish limitations. Targets below are goals to be measured, not guarantees.
 
@@ -27,10 +27,18 @@ Last updated: 2026-11-17 · Status: DESIGN, plus an AI router implemented and te
 4. The lead is saved and marked "captured without AI".
 5. If saving fails, the customer is told their request was **not** recorded and is given the business's verified contact method, if one is configured.
 
+## What is implemented today (Stage 3)
+
+- AI outage: the engine returns a fixed reply, flags `degraded.ai`, keeps collecting details; the mock's text is not shown.
+- Database down at the start: safety guidance still returned; customer told nothing can be saved; no conversation id issued; `/health` returns 503.
+- Lead write fails or the database lies about success: customer told the business has NOT received the details, verified phone offered if known; the next message retries and saves once.
+- Rate-limit store down: falls back to per-instance memory counts and reports degraded.
+- Not yet: a "captured without AI" lead mode (the engine collects the same fields with or without AI, but there is no marker), notifications, backups, metrics.
+
 ## Measurement (to be built)
 
 Uptime/error rate, p50/p95 response latency, AI failure and fallback counts, notification success rate, time-to-first-response. Published in an operator view with the measurement period, and any limits documented here. Until measured, no numbers are claimed.
 
 ## Known limitations today
 
-No monitoring, no database, no backups, no fallback. The prototype Worker is stateless, so it has nothing to back up and also nothing to recover.
+No monitoring, no backups, no notifications. The database path has only run on local SQLite and a fake D1 (KI-15). Free-tier D1 daily write limits could cut off lead saving mid-day (KI-16); the engine would report it as NOT saved.

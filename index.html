@@ -248,7 +248,7 @@
       <div class="avatar">L</div>
       <div>
         <strong>AquaFlow Plumbing</strong>
-        <small>LATCHLINE virtual assistant · Demo</small>
+        <small id="modeNote">LATCHLINE virtual assistant · Demo</small>
       </div>
     </div>
 
@@ -284,6 +284,53 @@
   const options = document.getElementById("options");
   const input = document.getElementById("chatInput");
 
+  // Live mode: talks to the LATCHLINE API (POST /api/chat). It is on only when
+  // the page is served from localhost, or when ?api=<url> is given. Otherwise
+  // the page runs the offline scripted demo below, which never contacts a server.
+  // The site key is a PUBLIC identifier, not a secret.
+  const params = new URLSearchParams(location.search);
+  const isLocal = ["localhost", "127.0.0.1"].includes(location.hostname);
+  const API_BASE = params.get("api") ? params.get("api").replace(/\/+$/, "") : (isLocal ? "" : null);
+  const SITE_KEY = params.get("key") || "sk_demo_local_0001";
+  const LIVE = API_BASE !== null;
+  let conversationId = null;
+  let sending = false;
+  const modeNote = document.getElementById("modeNote");
+  if (LIVE) {
+    modeNote.textContent = "Development server · mock AI · not production";
+    document.querySelector("footer").textContent = "LATCHLINE © 2026 · Development build · Mock AI only · Not production-ready";
+  } else {
+    modeNote.textContent = "Offline scripted demo · not connected to a server";
+  }
+
+  async function sendLive(text) {
+    if (sending) return;
+    sending = true;
+    options.innerHTML = "";
+    try {
+      const res = await fetch(API_BASE + "/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: text, siteKey: SITE_KEY, conversationId })
+      });
+      let data = {};
+      try { data = await res.json(); } catch (e) { data = {}; }
+      if (res.status === 429) {
+        bot("You're sending messages too quickly. Please wait " + (data.retryAfterSec || "a few") + " seconds and try again. Your last message was not processed.");
+      } else if (!res.ok) {
+        bot((data.error || "Something went wrong") + ". Your message was not processed and nothing was saved.");
+      } else {
+        if (data.conversationId) conversationId = data.conversationId;
+        bot(data.reply);
+        if (data.leadStatus === "not_saved") bot("Note: your details were NOT saved.");
+      }
+    } catch (e) {
+      bot("I can't reach the server right now. Nothing was sent or saved. Please try again in a moment.");
+    } finally {
+      sending = false;
+    }
+  }
+
   let step = "issue";
   let lead = {};
 
@@ -311,6 +358,7 @@
 
   function choose(text) {
     addMessage(text, "user");
+    if (LIVE) { sendLive(text); return; }
     handle(text);
   }
 

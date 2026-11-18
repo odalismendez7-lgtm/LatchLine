@@ -51,3 +51,7 @@ Models are chosen by measured results on our own test set, not by price or reput
 ## Quality measurement
 
 A fixed evaluation set (`TEST_CASES.md`): normal conversations, missing/incorrect information, emergencies, injection attempts, handoff triggers, repeated-question avoidance. Each provider/model is scored on the same set; results are recorded with dates.
+
+## Stage 3 note: how the AI is used today
+
+The engine calls the AI router only for open questions that verified knowledge cannot answer and that are not lead details or emergencies. Customer text goes only in user messages; the system prompt carries verified facts and an "unknown, do not guess" list. Replies must pass a guard (no promises, prices, times, phone numbers, links, instruction leaks) or a fixed reply is used. The provider is the labeled mock and its text is not shown to customers by default, so no AI-written text has reached a customer. Real providers remain disabled pending founder approval.

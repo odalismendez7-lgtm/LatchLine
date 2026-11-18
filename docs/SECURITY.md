@@ -1,6 +1,6 @@
 # Security Requirements
 
-Last updated: 2026-11-16 · Status: REQUIREMENTS (none implemented yet except a basic origin allow-list and message-length limit in the prototype)
+Last updated: 2026-11-17 (Stage 3) · Status: REQUIREMENTS, partly implemented (see the table below). Not security-reviewed by anyone independent.
 
 This repository may be **public**. Never commit secrets, customer data, real business data, or database exports.
 
@@ -21,9 +21,21 @@ This repository may be **public**. Never commit secrets, customer data, real bus
 | Customer privacy | Collect only needed fields; never request passwords or payment cards in chat; data retention/deletion policy defined | Policy + tests |
 | AI-specific | Customer text treated as untrusted data; model cannot access other tenants' data; model output cannot trigger privileged actions; response guard blocks invented facts/claims | Prompt-injection and leakage tests |
 
+## Implemented in Stage 3 (and what is still missing)
+
+| Area | Built and tested | Missing |
+|---|---|---|
+| Tenant isolation | Frozen per-business handles, `business_id` bound in every statement (SQL-spy test), composite foreign keys, cross-tenant read/write/merge tests, business chosen only by site key + registered origin | Never tested on real D1; no owner auth |
+| Database safety | Parameterized queries only; CHECK constraints; hostile-id tests; append-only audit log via triggers | No least-privilege roles (single binding); no encryption beyond the host's |
+| API protection | Per-client and per-business rate limits, 429 + Retry-After, 8 KB body limit, strict JSON checks, per-business CORS, no internals in errors, `no-store`/`nosniff` | IP-based limits only; origin is not authentication (KI-6); no bot protection |
+| Input validation | Message, phone, email, ZIP, name validators; text stored as inert data (render must escape; the demo page uses `textContent`) | Dashboard output escaping not built |
+| AI-specific | Customer text only in user messages; guard rejects promises/prices/times/phones/links; mock text hidden | Never tested against a real model (KI-19) |
+| Audit | Business, lead, knowledge events without customer values | Logins/permission failures (no auth) |
+| Privacy | Only needed fields collected; no passwords or cards requested | No retention/deletion policy, no encryption at app level, plain-text PII (KI-17) |
+
 ## Known weaknesses today
 
-See `KNOWN_ISSUES.md`. Notably: the prototype's origin check is not authentication (non-browser clients can set any `Origin` header), and there is no rate limiting.
+See `KNOWN_ISSUES.md`. Notably: origin and site key are not authentication (KI-6), personal data is stored unencrypted with no retention policy (KI-17), and leads reach nobody (KI-18).
 
 ## Rules for contributors
 

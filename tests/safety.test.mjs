@@ -179,13 +179,12 @@ describe("negation and uncertainty", () => {
   });
 });
 
-// Known limits of a phrase-based detector. These are expected to fail today and
-// are tracked in docs/KNOWN_ISSUES.md (KI-12). Do not remove without fixing.
-describe("known gaps (expected to fail, tracked)", () => {
-  test("non-English emergency phrasing is detected", { todo: "English-only rules (KI-12)" }, () => {
+// Stage 2 known gaps, closed in Stage 3 (now hard requirements).
+describe("former known gaps (closed in Stage 3)", () => {
+  test("non-English emergency phrasing is detected", () => {
     assert.equal(detect("mi casa huele a gas").emergency, true);
   });
-  test("steam and banging from a water heater is escalated", { todo: "no rule for pressure/steam hazards (KI-12)" }, () => {
+  test("steam and banging from a water heater is escalated", () => {
     assert.equal(detect("my water heater is making a loud banging and steam is coming out").emergency, true);
   });
 });

@@ -111,3 +111,7 @@ Plans, limits, and features must be changeable without rewriting application cod
 |---|---|---|
 | 2026-11-16 | Three tiers planned; $99 / $199 / $299 proposed, provisional pending cost research | Founder |
 | 2026-11-17 | Hosting and AI cost research recorded (partial). Prices remain provisional. | Engineering |
+
+## Stage 3 note: free-tier write budget (estimate, not measured)
+
+Each chat message currently causes about 7 database writes (2 rate-limit counters, 4 for storing the customer and assistant messages, 1 conversation state save), plus about 4 more when a lead is created. Against D1 Free's 100,000 rows written per day that is roughly 14,000 messages per day before writes fail, and the engine would then report leads as NOT saved. Real numbers must be measured on real D1 before any capacity claim. Plan prices remain provisional.

@@ -8,11 +8,15 @@ Last updated: 2026-11-17 · Each stage ends with: what was built, files changed,
 |---|---|---|
 | 1 (done) | Docs foundation, test harness, baseline tests | Docs written, baseline tests run and recorded |
 | 2 (done, 2026-11-17) | Research: hosting limits, AI provider pricing and privacy. Provider interface + mock + router, industry pack, knowledge schema and retrieval, safety layer v1, Worker wired to safety and retrieval | Research recorded; 181 tests: 177 pass, 0 fail, 4 TODO. Leftovers carried forward: professional review of safety procedures (KI-12), re-verify prices (KI-13), real-runtime measurements (KI-14) |
-| 3 | Data layer with tenant isolation, conversation state, KB loading, response guard, lead service with dedupe | Cross-tenant and duplicate-lead tests passing |
+| 3 (done, 2026-11-17) | Data layer with tenant isolation, conversation engine, KB loading, response guard, lead capture with dedupe, rate limiting, emergency gaps closed, UI connected | 468 tests pass, 0 TODO. Carried forward: real D1 verification (KI-15), notifications/dashboard (KI-18), retention policy (KI-17), professional review (KI-12) |
 | 4 | Notifications outbox (mock), handoff, degraded mode, failure tests | Failed-notification and AI-outage tests passing |
 | 5 | Auth, roles, owner dashboard (mobile + desktop) | Unauthorized-access and UI tests passing |
 | 6 | Entitlements/plans (no billing), analytics | Entitlement and metric-accuracy tests passing |
 | 7 | Security hardening (rate limits, validation, audit log), backup/restore drill, runbooks, readiness report | Full test matrix in `TEST_CASES.md` run and results recorded |
+
+## Next up (Stage 4 proposal, needs founder go-ahead)
+
+Notification outbox (mock first) and human handoff, so saved leads reach a person (KI-18); admin tooling to enter and verify a business's knowledge; honest degraded-mode details. Anything touching real D1, real email/SMS, or public hosting needs your explicit approval first.
 
 ## Future improvements (not scheduled)
 
