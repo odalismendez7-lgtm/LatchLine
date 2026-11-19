@@ -8,6 +8,9 @@
 import { DbError } from "./errors.js";
 import { nowIso, newId, json, parse, guard } from "./util.js";
 import { notificationsRepo } from "./notifications.js";
+import { membersRepo } from "./members.js";
+import { contactVerifyRepo } from "./contactVerify.js";
+import { dashboardRepo } from "./dashboard.js";
 
 // ---------- platform level (not tenant data): resolve a public site key ----------
 
@@ -198,5 +201,5 @@ export function forBusiness(db, businessId) {
     return r ?? null;
   });
 
-  return Object.freeze({ businessId: B, profile, conversations: Object.freeze(conversations), leads: Object.freeze(leads), knowledge: Object.freeze(knowledge), notifications: notificationsRepo(db, B, leads) });
+  return Object.freeze({ businessId: B, profile, conversations: Object.freeze(conversations), leads: Object.freeze(leads), knowledge: Object.freeze(knowledge), notifications: notificationsRepo(db, B, leads), members: membersRepo(db, B), contactVerify: contactVerifyRepo(db, B), dashboard: dashboardRepo(db, B) });
 }

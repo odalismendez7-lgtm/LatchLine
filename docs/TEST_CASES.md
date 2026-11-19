@@ -18,13 +18,37 @@ Rule: nothing is called production-ready unless the required checks below have p
 | Human handoff | Pass: phrase detection (positive and negative), honest "cannot connect live", handoff notification queued with the lead, repeated requests deduplicated, "NOT received" when it cannot be recorded, emergency priority carried. No live transfer exists |
 | AI service outages | Router tests plus engine tests: outage gives an honest fallback and a degraded flag; mock text hidden; unsafe AI replies replaced |
 | Duplicate leads | Pass: merge by phone/email, window, identical customer reply, no cross-business merging. Race between simultaneous conversations not tested (KI-20) |
-| Unauthorized access (including cross-business) | Pass at the data layer and API (now including the notification outbox: contacts, enqueue, claim, settle, reconcile, SQL spy, composite foreign keys, messages built from the right business only): cross-tenant read/write/merge denied, composite foreign keys with raw SQL, SQL spy, hostile ids, site key/origin mismatch, suspended business. No owner authentication exists to test |
+| Unauthorized access (including cross-business) | **Stage 5:** pass over HTTP for the dashboard and account APIs (see the Stage 5 log). Earlier: pass at the data layer and API (now including the notification outbox: contacts, enqueue, claim, settle, reconcile, SQL spy, composite foreign keys, messages built from the right business only): cross-tenant read/write/merge denied, composite foreign keys with raw SQL, SQL spy, hostile ids, site key/origin mismatch, suspended business. Demo authentication only (KI-31) |
 | Prompt injection | Worker, engine, and safety tested with injection strings against the mock. Not tested against a real model |
-| Mobile and desktop interfaces | 19 browser tests (Chromium via Playwright) at 1280x800 and 375x700: live chat, emergency text, lead flow, XSS-as-text, offline/429/unreachable messages, no horizontal scroll. Visual review by a person not done |
+| Mobile and desktop interfaces | **Stage 5:** 21 dashboard browser tests (desktop and phone). Earlier: 19 browser tests (Chromium via Playwright) at 1280x800 and 375x700: live chat, emergency text, lead flow, XSS-as-text, offline/429/unreachable messages, no horizontal scroll. Visual review by a person not done |
 | Rate limiting | Pass: burst 429 with Retry-After, window rollover, per-business limit, DB-backed store, store failure fallback. Not load-tested |
 | Backup restore drill | Not built |
 
 ## Result log
+
+### 2026-11-19: Stage 5
+
+Command: `npm test` on Node v22.23.4 (Playwright Chromium installed), run after the last code change.
+
+| File | Tests | Pass | Fail | TODO |
+|---|---|---|---|---|
+| Stage 1-4 files (16 files, unchanged counts) | 574 | 574 | 0 | 0 |
+| `tests/auth.test.mjs` | 45 | 45 | 0 | 0 |
+| `tests/contacts.test.mjs` | 18 | 18 | 0 | 0 |
+| `tests/dashboard.test.mjs` | 47 | 47 | 0 | 0 |
+| `tests/dashboard.ui.test.mjs` | 21 | 21 | 0 | 0 |
+| **Total** | **705** | **705** | **0** | **0** |
+
+Covered: password hashing and policy; registration, verification, login, generic errors and timing; brute-force 429; session expiry (idle, absolute), logout, revocation; recovery; audit contents (no secrets); contact management and simulated verification (expiry, attempts including parallel guesses, cooldown, daily cap, cross-business, real vs simulated, dispatcher refusal of real providers for simulated contacts); HTTP hardening (CSRF, origin, content type, size, headers); role matrix; viewer masking; last-owner and invitation rules; cross-business attacks (every route 404 identical to a nonexistent business, edit/delete/export/verify/invite attempts leave the other business unchanged, hostile ids, body/query overrides, removed members, SQL spy on the new repositories); settings confirmation; CSV injection; honest notification wording; browser tests at 1280x800 and 375x700 (layout, no horizontal scroll, touch targets, hostile markup shown as text, strict CSP with no violations, cookie invisible to scripts, nothing in web storage, simulated labels).
+
+Mutation checks on the Stage 5 code: 19 deliberate breakages (membership check, permission check, same-origin check, CSRF check, contact masking, message redaction, CSV escaping, dispatcher guard, simulated-as-real verification, attempt cap in two places, code expiry, last-owner demote and removal, invitation email match, settings confirmation, tenant filter on a status update, absolute and idle session expiry). 16 killed at once. 3 survived: the two attempt-cap guards (each redundant with the other; removing both together is killed after a parallel-guess test was added) and the tenant filter on the status UPDATE (redundant with the tenant-checked read just before it; the new SQL-spy test now covers it). Bugs found by testing: team routes read the wrong id (fixed); a message popup covered buttons on phones (fixed); toast lost on re-render (fixed).
+
+What this run does NOT show:
+- No real email, SMS, or AI was used; account emails and verification codes are simulated (KI-31, KI-36).
+- Password hashing cost on Workers is unmeasured (KI-30). Nothing ran on real D1 or Workers, or behind HTTPS hosting (KI-15, KI-39).
+- Browser checks are Chromium only, with no accessibility audit and no review by a person (KI-37).
+- No load test, no independent security review, same author wrote code and tests.
+- This is demo authentication, not production-ready, and the product is not production-ready.
 
 ### 2026-11-18: Stage 4
 

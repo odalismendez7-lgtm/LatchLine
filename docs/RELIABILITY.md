@@ -39,6 +39,10 @@ Last updated: 2026-11-18 (Stage 4) · Status: DESIGN, plus implemented and teste
 - Crashed dispatcher: lease expiry reclaims the row; the dead attempt is recorded.
 - Not yet: a "captured without AI" lead mode (the engine collects the same fields with or without AI, but there is no marker), notifications, backups, metrics.
 
+## Stage 5 note
+
+The dashboard shows notification history and the `needsAttention` list, so a failed or undeliverable notification is now visible to an authorized person, using the exact honest wording from `src/notify/status.js`. It is still not an alert: nobody is paged. Dashboard and account failures return generic errors (never internals).
+
 ## Measurement (to be built)
 
 Uptime/error rate, p50/p95 response latency, AI failure and fallback counts, notification success rate, time-to-first-response. Published in an operator view with the measurement period, and any limits documented here. Until measured, no numbers are claimed.

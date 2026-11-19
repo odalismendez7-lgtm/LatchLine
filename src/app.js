@@ -17,15 +17,22 @@ import { dispatchDue } from "./notify/dispatcher.js";
 import { plumbingPack } from "./packs/plumbing.js";
 import { detectEmergency, composeSafetyReply } from "./safety/detector.js";
 import { normalizeMessage } from "./validation/normalize.js";
+import { createAuthService } from "./auth/service.js";
+import { createDashboardApi } from "./dashboard/api.js";
+import { dashboardPage } from "./dashboard/page.js";
 
 const MAX_BODY_BYTES = 8 * 1024;
 const PACKS = { plumbing: plumbingPack };
 
-export function createApp({ db, router = null, store, salt, clientLimit = { limit: 30, windowMs: 60_000 }, businessLimit = { limit: 600, windowMs: 60_000 }, now = Date.now, showMockReplies = false, extraKnownOrigins = [], channels = null }) {
+export function createApp({ db, router = null, store, salt, clientLimit = { limit: 30, windowMs: 60_000 }, businessLimit = { limit: 600, windowMs: 60_000 }, now = Date.now, showMockReplies = false, extraKnownOrigins = [], channels = null, accounts = null }) {
   if (typeof salt !== "string" || salt.length < 8) throw new Error("createApp needs a salt of at least 8 characters");
   const platform = platformRepo(db);
   const clientLimiter = createLimiter({ store, ...clientLimit, now });
   const businessLimiter = createLimiter({ store, ...businessLimit, now });
+
+  // Owner accounts + dashboard. Enabled only when a mailer is supplied (mock only today).
+  const auth = accounts ? createAuthService({ db, mailer: accounts.mailer, store, salt, now, iterations: accounts.iterations, cfg: accounts.cfg }) : null;
+  const dashboard = accounts ? createDashboardApi({ db, auth, mailer: accounts.mailer, now, devMode: accounts.devMode === true }) : null;
 
   const baseHeaders = { "Content-Type": "application/json", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", Vary: "Origin" };
   const json = (data, status, corsOrigin, extra = {}) =>
@@ -102,6 +109,7 @@ export function createApp({ db, router = null, store, salt, clientLimit = { limi
 
   return {
     runScheduled,
+    auth,
     idle: () => Promise.all([...pending]),
     async fetch(request, ctx) {
       const url = new URL(request.url);
@@ -114,6 +122,12 @@ export function createApp({ db, router = null, store, salt, clientLimit = { limi
             status: ok ? 204 : 403,
             headers: ok ? { "Access-Control-Allow-Origin": origin, "Access-Control-Allow-Methods": "GET, POST, OPTIONS", "Access-Control-Allow-Headers": "Content-Type", "Access-Control-Max-Age": "600", Vary: "Origin" } : { Vary: "Origin" },
           });
+        }
+
+        if (dashboard) {
+          if (request.method === "GET" && (url.pathname === "/app" || url.pathname === "/app/")) return dashboardPage({ devMode: accounts.devMode === true });
+          const r = await dashboard.handle(request);
+          if (r) return r;
         }
 
         if (url.pathname === "/health" && request.method === "GET") {

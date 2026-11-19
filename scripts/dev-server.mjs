@@ -15,11 +15,12 @@ import { MemoryStore, DbStore } from "../src/ratelimit/limiter.js";
 import { AIRouter } from "../src/ai/router.js";
 import { createProvider } from "../src/ai/registry.js";
 import { createNotifier, createChannelMap } from "../src/notify/registry.js";
+import { MockMailer } from "../src/auth/mailer.js";
 import { demoAquaflowKb } from "../src/knowledge/demo-aquaflow.js";
 
 export const DEV_SITE_KEY = "sk_demo_local_0001";
 
-export async function startDevServer({ port = 8787, dbPath = ":memory:", host = "127.0.0.1", clientLimit } = {}) {
+export async function startDevServer({ port = 8787, dbPath = ":memory:", host = "127.0.0.1", clientLimit, iterations } = {}) {
   if (dbPath !== ":memory:") mkdirSync(new URL("../.data/", import.meta.url), { recursive: true });
   const db = new SqliteAdapter(dbPath);
   migrate(db);
@@ -28,12 +29,16 @@ export async function startDevServer({ port = 8787, dbPath = ":memory:", host = 
   if (!(await platform.businessBySiteKey(DEV_SITE_KEY))) {
     await platform.createBusiness({ id: "demo-plumbing", name: "AquaFlow Plumbing (demo)", industry: "plumbing", siteKey: DEV_SITE_KEY, origins });
     await forBusiness(db, "demo-plumbing").knowledge.set(demoAquaflowKb);
-    // A verified SIMULATED contact so the notification flow can be exercised. The mock never sends anything.
-    await forBusiness(db, "demo-plumbing").notifications.contacts.add({ channel: "email", address: "owner@demo.invalid", verified: true });
+    // A SIMULATED-verified contact so the notification flow can be exercised. The mock never sends anything,
+    // and a simulated-verified contact can never receive anything from a real provider.
+    const demo = forBusiness(db, "demo-plumbing");
+    const c = await demo.notifications.contacts.add({ channel: "email", address: "owner@demo.invalid" });
+    await demo.notifications.contacts.markSimulatedVerified(c.id);
   }
   const notifier = createNotifier({ type: "mock" });
+  const mailer = new MockMailer(); // SIMULATED account emails: shown at /dev/simulated-mail, never sent
   const app = createApp({
-    db, channels: createChannelMap([notifier]), store: new DbStore(db), salt: "dev-only-salt",
+    db, accounts: { mailer, devMode: true, ...(iterations ? { iterations } : {}) }, channels: createChannelMap([notifier]), store: new DbStore(db), salt: "dev-only-salt",
     router: new AIRouter({ providers: [createProvider({ type: "mock" })] }),
     ...(clientLimit ? { clientLimit } : {}),
   });
@@ -59,11 +64,12 @@ export async function startDevServer({ port = 8787, dbPath = ":memory:", host = 
   await new Promise((resolve) => server.listen(port, host, resolve));
   const timer = setInterval(() => { app.runScheduled().catch(() => {}); }, 5000);
   timer.unref();
-  return { server, db, app, notifier, port: server.address().port, close: () => { clearInterval(timer); return new Promise((r) => server.close(r)); } };
+  return { server, db, app, notifier, mailer, port: server.address().port, close: () => { clearInterval(timer); return new Promise((r) => server.close(r)); } };
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   const port = Number(process.env.PORT || 8787);
   const { port: p } = await startDevServer({ port, dbPath: process.env.DB_PATH || ".data/dev.sqlite" });
   console.log(`LATCHLINE dev server: http://127.0.0.1:${p}  (mock AI, local database, not a deployment)`);
+  console.log(`Dashboard: http://127.0.0.1:${p}/app  (DEMO authentication; emails are simulated, see /app#dev)`);
 }

@@ -10,7 +10,7 @@ Last updated: 2026-11-17 · Each stage ends with: what was built, files changed,
 | 2 (done, 2026-11-17) | Research: hosting limits, AI provider pricing and privacy. Provider interface + mock + router, industry pack, knowledge schema and retrieval, safety layer v1, Worker wired to safety and retrieval | Research recorded; 181 tests: 177 pass, 0 fail, 4 TODO. Leftovers carried forward: professional review of safety procedures (KI-12), re-verify prices (KI-13), real-runtime measurements (KI-14) |
 | 3 (done, 2026-11-17) | Data layer with tenant isolation, conversation engine, KB loading, response guard, lead capture with dedupe, rate limiting, emergency gaps closed, UI connected | 468 tests pass, 0 TODO. Carried forward: real D1 verification (KI-15), notifications/dashboard (KI-18), retention policy (KI-17), professional review (KI-12) |
 | 4 | Notifications outbox (mock), handoff, degraded mode, failure tests | Failed-notification and AI-outage tests passing |
-| 5 | Auth, roles, owner dashboard (mobile + desktop) | Unauthorized-access and UI tests passing |
+| 5 (done, 2026-11-19) | Auth, roles, owner dashboard (mobile + desktop), contact verification (simulated) | 705 tests pass, including cross-business and UI tests. Carried forward: KI-30 to KI-39 |
 | 6 | Entitlements/plans (no billing), analytics | Entitlement and metric-accuracy tests passing |
 | 7 | Security hardening (rate limits, validation, audit log), backup/restore drill, runbooks, readiness report | Full test matrix in `TEST_CASES.md` run and results recorded |
 
@@ -18,9 +18,13 @@ Last updated: 2026-11-17 · Each stage ends with: what was built, files changed,
 
 Provider-independent notifier adapter with a mock default, outbox with idempotency, retries and priorities, honest delivery statuses, handoff requests, emergency escalation, scheduled recovery. 574 tests pass. No real email/SMS provider exists. Carried forward: KI-18, KI-22 to KI-29.
 
-## Next up (Stage 5 proposal, needs founder go-ahead)
+## Stage 5 (done, 2026-11-19): owner accounts, contact verification, dashboard
 
-Owner authentication and contact verification (KI-25), a dashboard showing leads, notification status and `needsAttention`, per-business notification budget and spam protection (KI-27). A real email provider (the adapter slot exists) only after a cost, privacy and terms review and your explicit approval.
+Demo authentication with real logic and a mock mailer, roles, tenant-checked dashboard API and UI, simulated contact verification, settings feeding the verified knowledge base. Not production-ready (see `SECURITY.md`).
+
+## Next up (proposal, needs founder go-ahead)
+
+Decisions that need you: (1) measure password hashing on a free local Workers runtime and decide how to handle KI-30; (2) choose and approve a real email provider after a cost/privacy/terms review (needed for real accounts, real contact verification and real notifications, KI-31/36); (3) approve any hosting. Engineering work that needs no spending: per-business notification budget and spam protection (KI-27), cleanup of unverified accounts (KI-33), retention/deletion policy (KI-17/38), accessibility review (KI-37).
 
 ## Future improvements (not scheduled)
 

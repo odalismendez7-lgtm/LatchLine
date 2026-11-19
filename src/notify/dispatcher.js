@@ -76,6 +76,13 @@ export async function dispatchDue({ db, channels, now = () => new Date().toISOSt
       } catch { await settleFailure("database_unavailable", true); continue; }
       if (!lead) { await settleFailure("lead_missing", false); continue; }
 
+      // A contact confirmed only by a SIMULATED code may receive mock sends and nothing else.
+      if (!provider.simulated) {
+        let real = false;
+        try { real = await N.contacts.isRealVerified(n.channel, n.recipient); } catch { await settleFailure("database_unavailable", true); continue; }
+        if (!real) { await settleFailure("contact_not_verified", false); continue; }
+      }
+
       const msg = renderNotification({ kind: n.kind, priority: n.priority, channel: n.channel, business: profile, lead });
       let result;
       try {

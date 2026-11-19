@@ -2,7 +2,7 @@
 
 Last updated: 2026-11-17 (Stage 3) · Status: PROPOSED (approved decisions are logged in `DECISIONS.md`)
 
-## Current state (after Stage 4)
+## Current state (after Stage 5)
 
 Built and tested (see `TEST_CASES.md`):
 
@@ -28,7 +28,20 @@ Stage 4 additions:
 
 Notification flow: lead saved and read back, then queued (separate step, retried on later turns, recovered by the sweep), then dispatcher claims by priority, renders from tenant data, calls the provider with the idempotency key, records `sent`, later records `delivered` only if the provider confirms.
 
-Not built: authentication, owner dashboard, contact verification, real notification providers, delivery webhooks, entitlements, analytics, backups, embeddable widget, real AI, real D1 verification.
+
+Stage 5 additions (after Stage 5):
+
+- `migrations/0003_accounts.sql`: `users`, `sessions`, `auth_tokens`, `memberships`, `invitations`, `contact_verifications`, and `business_contacts.simulated_verified_at`.
+- `src/auth/`: `crypto.js` (PBKDF2, tokens, codes), `mailer.js` (mock only; real mailers refused), `permissions.js` (role table), `repo.js` (platform-level account data), `service.js` (register, verify, login, sessions, recovery, invitations).
+- `src/db/`: `members.js` (memberships, invitations, audit view), `contactVerify.js` (hashed codes, attempts), `dashboard.js` (lead search/status/delete/export, conversations, handoffs, notification history). All reached only through `forBusiness`.
+- `src/dashboard/`: `authz.js` (the only place a dashboard request obtains a tenant handle; masking), `api.js` (`/api/auth/*`, `/api/me`, `/api/biz/:id/*`), `contactService.js`, `settings.js` (settings to verified knowledge-base facts), `client.js` + `page.js` (the single-page UI with a nonce CSP, served at `/app`).
+- `src/app.js` takes an optional `accounts` option. Without it nothing new is reachable. `src/index.js` does not pass it (KI-32). `scripts/dev-server.mjs` passes the mock mailer with dev mode (simulated mailbox at `/app#dev`).
+
+Dashboard request flow: same-origin check, cookie to session (idle/absolute expiry), CSRF header for changes, membership lookup for the URL's business id (404 if none), permission check (403), then a tenant handle for that business only, then role-based masking of customer contact details.
+
+Real providers later: replace the mock mailer with an adapter exposing `send` and `simulated:false`; the verification service, dispatcher guard and UI labels adapt automatically (simulated flag drives wording and what verification means).
+
+Not built: production authentication (real email, MFA), real contact verification, real notification providers, delivery webhooks, entitlements, analytics, backups, embeddable widget, real AI, real D1 verification.
 
 Assessment: Cloudflare Workers remains suitable. Real D1 behavior is untested (KI-15).
 

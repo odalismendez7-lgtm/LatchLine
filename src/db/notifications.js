@@ -54,12 +54,35 @@ export function notificationsRepo(db, B, leadsRepo) {
       });
     },
     async list() {
-      return guard(() => db.all("SELECT id, channel, address, enabled, verified_at FROM business_contacts WHERE business_id = ? ORDER BY created_at, rowid", [B]));
+      return guard(() => db.all("SELECT id, channel, address, enabled, verified_at, simulated_verified_at FROM business_contacts WHERE business_id = ? ORDER BY created_at, rowid", [B]));
+    },
+    async get(id) {
+      return guard(async () => (await db.first("SELECT id, channel, address, enabled, verified_at, simulated_verified_at FROM business_contacts WHERE id = ? AND business_id = ?", [id, B])) ?? null);
+    },
+    async remove(id) {
+      return guard(async () => {
+        const r = await db.batch([
+          { sql: "DELETE FROM business_contacts WHERE id = ? AND business_id = ?", params: [id, B] },
+          audit("contact_removed", id),
+        ]);
+        if (r[0].changes !== 1) throw new DbError("not_found", "contact not found for this business");
+      });
+    },
+    /** A code from a MOCK sender was entered. Nothing was delivered, so this is NOT verified_at. */
+    async markSimulatedVerified(id, now = nowIso()) {
+      return guard(async () => {
+        const r = await db.run("UPDATE business_contacts SET simulated_verified_at = ? WHERE id = ? AND business_id = ?", [now, id, B]);
+        if (r.changes !== 1) throw new DbError("not_found", "contact not found for this business");
+      });
+    },
+    /** True only for a contact confirmed through a real provider. Used by the dispatcher before any real send. */
+    async isRealVerified(channel, address) {
+      return guard(async () => !!(await db.first("SELECT 1 AS x FROM business_contacts WHERE business_id = ? AND channel = ? AND address = ? AND enabled = 1 AND verified_at IS NOT NULL", [B, channel, address])));
     },
   };
 
   const sendable = () => guard(() => db.all(
-    "SELECT id, channel, address FROM business_contacts WHERE business_id = ? AND enabled = 1 AND verified_at IS NOT NULL ORDER BY channel, created_at", [B]));
+    "SELECT id, channel, address FROM business_contacts WHERE business_id = ? AND enabled = 1 AND (verified_at IS NOT NULL OR simulated_verified_at IS NOT NULL) ORDER BY channel, created_at", [B]));
 
   function pickRecipients(list, priority) {
     if (priority === "emergency") return list; // every verified channel

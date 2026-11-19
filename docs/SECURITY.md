@@ -1,6 +1,6 @@
 # Security Requirements
 
-Last updated: 2026-11-18 (Stage 4) · Status: REQUIREMENTS, partly implemented (see the table below). Not security-reviewed by anyone independent.
+Last updated: 2026-11-19 (Stage 5) · Status: REQUIREMENTS, partly implemented (see the table below). Not security-reviewed by anyone independent.
 
 This repository may be **public**. Never commit secrets, customer data, real business data, or database exports.
 
@@ -34,9 +34,24 @@ This repository may be **public**. Never commit secrets, customer data, real bus
 | Notifications | Per-business outbox with composite foreign keys; only verified, enabled contacts used; text built only from that business's own lead; header/control-character stripping; idempotent; error codes only (no text) stored; real providers refused by the registry | Contact verification flow (KI-25); notification volume caps (KI-27); privacy review (KI-26); webhook signature checks (none exist yet) |
 | Privacy | Only needed fields collected; no passwords or cards requested | No retention/deletion policy, no encryption at app level, plain-text PII (KI-17) |
 
+## Implemented in Stage 5 (DEMO authentication, not production-ready)
+
+| Area | Built and tested | Missing / caveats |
+|---|---|---|
+| Passwords | PBKDF2-SHA256, 600,000 iterations, random salt, parameters in the hash, rehash on login, length 12-128 with a common-password and email check, constant-time compare; no plaintext in the database, audit log, or responses (tested) | Cost never measured on Workers (KI-30); no breach database, no MFA (KI-35) |
+| Sessions | Random token, only its hash stored; 30 min idle and 12 h absolute expiry; new token per login; logout, logout-everywhere, password change and reset revoke sessions; HttpOnly SameSite=Strict cookie (`__Host-` + Secure on https) | Not run behind real HTTPS hosting (KI-39); no session list UI |
+| Attack protections | Generic errors, identical answers for known/unknown emails, dummy-hash timing, per-IP and per-email throttles (429 + Retry-After), CSRF token + same-origin check on every state change, JSON-only, 16 KB limit, strict nonce CSP, no `innerHTML`, hostile markup shown as text (browser-tested) | Lockout trade-off (KI-34); no CAPTCHA (KI-33) |
+| Recovery | Forgot-password never reveals whether an account exists; reset links last 1 hour, work once, newest wins, weak passwords do not burn the link | Links are only SIMULATED emails (KI-31) |
+| Authorization | Deny-by-default role table, membership checked in the database on every request, 404 for non-members (no existence leak), 403 for missing permission, last-owner protection, invitations bound to the invited verified email | Roles are coarse; no per-lead assignment |
+| Tenant isolation over HTTP | 20+ cross-business attempts (read, edit, delete, export, verify, invite, role change, guessed ids, hostile ids, body/query overrides, removed members) all denied with the business unchanged; SQL spy covers the new repositories | Not tested on real D1 (KI-15) |
+| Contact verification | See Decision 42; simulated-only with the mock; cannot be upgraded to real | Real provider untested (KI-36) |
+| Audit | Account, lead, settings, contact, team and export events; ids and field names only | No alerting |
+
+**Demo vs production.** What exists is real security logic running against a mock mailer on a local server. It is **demo authentication**. It becomes production authentication only after: real email delivery (KI-31), a measured hashing cost on the target platform (KI-30), HTTPS hosting re-tests (KI-39), bot protection (KI-33), and an independent security review. None has happened.
+
 ## Known weaknesses today
 
-See `KNOWN_ISSUES.md`. Notably: origin and site key are not authentication (KI-6), personal data is stored unencrypted with no retention policy (KI-17), and leads reach nobody (KI-18).
+See `KNOWN_ISSUES.md`. Notably: origin and site key are not authentication (KI-6), personal data is stored unencrypted with no retention policy (KI-17), leads reach nobody real (KI-18), accounts use a mock mailer (KI-31), and hashing cost on Workers is unmeasured (KI-30).
 
 ## Rules for contributors
 
