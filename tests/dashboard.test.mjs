@@ -15,7 +15,7 @@ const PW = "correct horse battery staple";
 export async function makeWorld({ devMode = false } = {}) {
   const db = new SqliteAdapter(":memory:"); migrate(db);
   const mailer = new MockMailer();
-  const app = createApp({ db, store: new MemoryStore(), salt: "test-salt-123", accounts: { mailer, iterations: 1500, devMode } });
+  const app = createApp({ db, store: new MemoryStore(), salt: "test-salt-123", accounts: { mailer, iterations: 1500, cfg: { unsafeFastHashForTests: true }, devMode } });
   const call = async (method, path, { body, cookie, csrf, origin = ORIGIN, headers = {}, raw } = {}) => {
     const h = { ...headers };
     if (origin !== null && method !== "GET") h.Origin = origin;

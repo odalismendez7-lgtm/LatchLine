@@ -34,9 +34,21 @@ export function constantTimeEqual(a, b) {
   return diff === 0;
 }
 
+/**
+ * The platform could not run the requested password hash (for example a runtime that caps PBKDF2
+ * iterations; Workers is reported to cap Web Crypto PBKDF2 at 100,000 and this was NOT verified,
+ * KI-30). Callers must FAIL CLOSED: no account is created, no session is issued, and the strength
+ * is never lowered to make it work. The message never contains the password.
+ */
+export class HashUnavailableError extends Error {
+  constructor(iterations) { super(`password hashing at ${iterations} iterations is not available on this platform`); this.name = "HashUnavailableError"; this.code = "hash_unavailable"; }
+}
+
 async function derive(password, salt, iterations) {
-  const key = await crypto.subtle.importKey("raw", enc.encode(password.normalize("NFKC")), "PBKDF2", false, ["deriveBits"]);
-  return new Uint8Array(await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt, iterations }, key, 256));
+  try {
+    const key = await crypto.subtle.importKey("raw", enc.encode(password.normalize("NFKC")), "PBKDF2", false, ["deriveBits"]);
+    return new Uint8Array(await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt, iterations }, key, 256));
+  } catch { throw new HashUnavailableError(iterations); }
 }
 
 export async function hashPassword(password, iterations = PBKDF2_ITERATIONS) {

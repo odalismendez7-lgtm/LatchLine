@@ -1,0 +1,21 @@
+# UNVERIFIED EXAMPLE: written for a LOCAL-ONLY Cloudflare runtime (`wrangler dev --local`) but never run,
+# because wrangler/workerd could not be installed when this was written (docs/LOCAL_DEVELOPMENT.md, KI-40).
+# Copy to wrangler.local.toml (do not commit secrets). `--local` uses a local file-backed
+# D1 simulation and does NOT contact Cloudflare, create a remote database, or deploy.
+name = "latchline-local"
+main = "src/index.js"
+compatibility_date = "2026-11-16"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "latchline-local"
+# Placeholder only. A real id would come from creating a REMOTE database, which needs founder approval. Do not create one.
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
+
+[vars]
+# Local-only values. The salt is not a secret here; production must use a real secret (wrangler secret put).
+RATE_LIMIT_SALT = "local-dev-only-salt-change-me"
+# Switches the dashboard and account routes ON with the MOCK mailer (nothing is ever sent).
+LATCHLINE_ACCOUNTS = "mock-local"
+LATCHLINE_DEV_MAILBOX = "1"

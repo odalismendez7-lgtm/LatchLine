@@ -24,6 +24,11 @@ const iso = (ms) => new Date(ms).toISOString();
 const slug = (name) => name.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40) || "business";
 
 export function createAuthService({ db, mailer, store, salt, now = Date.now, iterations = PBKDF2_ITERATIONS, cfg = {} }) {
+  // Safety net: password hashing can never be silently weakened (for example to fit a CPU limit).
+  // Only tests may opt out, explicitly, and no production entry point sets this flag.
+  if (!(iterations >= PBKDF2_ITERATIONS) && cfg.unsafeFastHashForTests !== true) {
+    throw new Error(`Refusing to start: password hashing must use at least ${PBKDF2_ITERATIONS} iterations`);
+  }
   if (typeof salt !== "string" || salt.length < 8) throw new Error("auth service needs a salt of at least 8 characters");
   const c = { ...DEFAULTS, ...cfg };
   const repo = authRepo(db);
@@ -114,7 +119,9 @@ export function createAuthService({ db, mailer, store, salt, now = Date.now, ite
         return { ok: false, code: "invalid_credentials" };
       }
       if (!user.email_verified_at) return { ok: false, code: "email_not_verified" };
-      if (needsRehash(user.password_hash, iterations)) await repo.upgradeHash(user.id, await hashPassword(password, iterations));
+      // Upgrading an old hash is best effort: a platform that cannot run the stronger hash must not lock out
+      // a user whose existing hash just verified. (New hashes are never created below full strength.)
+      if (needsRehash(user.password_hash, iterations)) { try { await repo.upgradeHash(user.id, await hashPassword(password, iterations)); } catch (e) { if (e?.name !== "HashUnavailableError") throw e; } }
       const s = await openSession(user.id);
       await repo.audit(null, user.id, "login_succeeded", user.id, {});
       return { ok: true, token: s.token, csrf: s.csrf, expiresAt: s.expiresAt, user: { id: user.id, email: user.email } };

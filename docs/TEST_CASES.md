@@ -26,6 +26,35 @@ Rule: nothing is called production-ready unless the required checks below have p
 
 ## Result log
 
+### 2026-11-19: Stage 6 (runtime and database integration)
+
+Command: `npm test` on Node v22.23.4 with Playwright Chromium available, run after the last code change.
+
+| File | Tests | Pass | Fail | TODO |
+|---|---|---|---|---|
+| Stage 1-5 files (20 files; `auth.test.mjs` now 46) | 706 | 706 | 0 | 0 |
+| `tests/runtime.process.test.mjs` (new) | 25 | 25 | 0 | 0 |
+| `tests/worker.runtime.test.mjs` (new) | 12 | 12 | 0 | 0 |
+| `tests/worker.ui.test.mjs` (new) | 12 | 12 | 0 | 0 |
+| `tests/hash.platform.test.mjs` (new) | 5 | 5 | 0 | 0 |
+| **Total** | **760** | **760** | **0** | **0** |
+
+What actually ran:
+- `runtime.process`: two servers (the app on Node, and the real Worker entry on a D1-shaped shim) each started as a separate OS process with a real SQLite file and called over real HTTP: registration, simulated verification, login (full-strength hash checked in the file), simulated contact verification, a customer chat creating a lead, mock notification sent and labeled simulated, status update and audit events, cross-business and hostile-id and CSRF/origin attacks, a database write-lock fault (503, no internals, no partial write, no session cookie, self-recovery), idle and absolute session expiry and logout, clean restart (same cookie still valid; leads, contacts, audit, queue, simulated mail persist; stored hash still verifies), a hard kill with an interrupted notification that is re-sent exactly once, delete not resurrecting, and a scan of process output for secrets. Plus the Worker entry with accounts switched off (404 everywhere).
+- `worker.runtime`: the real `src/index.js` with the D1 adapter: default-off flag and wrangler.toml check, mailbox flags and localhost rule, missing-salt 503, full account flow, cross-business denial, simulated-mail purge, injected D1 outages (503, no internals, recovery, no enumeration, no partial write), scheduled recovery.
+- `worker.ui`: desktop and phone browsers against the Worker-entry process: register, simulated verify, sign in, every section without horizontal scroll, database-outage message, restart keeping the browser signed in, idle-timeout explanation, no CSP/console errors.
+- `hash.platform`: a simulated platform that refuses 600,000-iteration PBKDF2: registration and login fail closed with 503, nothing created, no enumeration, old hashes still verify without being replaced by a weaker one; startup guard. Mutation-checked (5 breakages killed).
+- `auth.test.mjs`: new test that hashing cannot be weakened without an explicit test-only opt-out.
+
+Mutation checks on Stage 6 code: 9 deliberate breakages (hash guard, accounts flag, dev-mailbox flag, 503 mapping, mailer persistence, session-ended handling, outage message, expired-lease reclaim, mail purge): all 9 killed.
+
+Could NOT be tested, and why:
+- Anything on the real Cloudflare local runtime (`wrangler dev`, workerd, Miniflare) or local/real D1: not installed, package downloads blocked here (KI-40, KI-15).
+- Password-hash CPU time on Workers (only Node measured; KI-30).
+- Workers isolate lifecycle, CPU and subrequest limits, cron on the runtime, behind-HTTPS behavior (KI-39, KI-40).
+- Safari/Firefox, accessibility audit, independent review (KI-37).
+- This is not evidence the product is production-ready. It is not.
+
 ### 2026-11-19: Stage 5
 
 Command: `npm test` on Node v22.23.4 (Playwright Chromium installed), run after the last code change.

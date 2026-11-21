@@ -24,3 +24,6 @@ backups/
 npm-debug.log*
 .DS_Store
 .data/
+
+# Local Cloudflare runtime config (copied from wrangler.local.example.toml)
+wrangler.local.toml

@@ -31,6 +31,30 @@ export class MockMailer {
   last(template, to) { return [...this.outbox].reverse().find((m) => (!template || m.template === template) && (!to || m.to === to)); }
 }
 
+/**
+ * Same mock, but each simulated message is also written to the `simulated_mail` table
+ * (migration 0004) so it survives restarts and works across Worker isolates. STILL NOTHING IS SENT.
+ * Rows hold raw one-time tokens by design (development only) and are purged after 2 hours.
+ */
+export class DbMockMailer extends MockMailer {
+  #db;
+  #now;
+  constructor(db, { now = Date.now, fail } = {}) { super({ fail }); this.#db = db; this.#now = now; }
+  async send(msg) {
+    const r = await super.send(msg);
+    const t = this.#now();
+    await this.#db.run("INSERT INTO simulated_mail (id, channel, to_addr, template, data, created_at) VALUES (?,?,?,?,?,?)",
+      [r.messageId + "_" + t.toString(36), msg.channel, msg.to, msg.template, JSON.stringify(msg.data ?? {}), new Date(t).toISOString()]);
+    await this.#db.run("DELETE FROM simulated_mail WHERE created_at < ?", [new Date(t - 2 * 3600_000).toISOString()]);
+    return r;
+  }
+  async list(limit = 50) {
+    const rows = await this.#db.all("SELECT id, channel, to_addr, template, data, created_at FROM simulated_mail ORDER BY created_at DESC, rowid DESC LIMIT ?", [Math.min(Math.max(1, limit | 0), 200)]);
+    return rows.map((r) => ({ messageId: r.id, channel: r.channel, to: r.to_addr, template: r.template, data: JSON.parse(r.data), simulated: true, createdAt: r.created_at }));
+  }
+  async lastAsync(template, to) { return (await this.list(200)).find((m) => (!template || m.template === template) && (!to || m.to === to)); }
+}
+
 export function createMailer(config) {
   if (config?.type === "mock") return new MockMailer(config);
   throw new MailerError("disabled", `Mailer '${String(config?.type)}' is disabled. Real email/SMS requires founder approval.`);

@@ -16,7 +16,7 @@ function world(cfg = {}) {
   migrate(db);
   const mailer = new MockMailer();
   const c = clock();
-  const svc = createAuthService({ db, mailer, store: new MemoryStore(), salt: "test-salt-123", now: c.now, iterations: IT, cfg });
+  const svc = createAuthService({ db, mailer, store: new MemoryStore(), salt: "test-salt-123", now: c.now, iterations: IT, cfg: { unsafeFastHashForTests: true, ...cfg } });
   const dump = async () => JSON.stringify({ u: await db.all("SELECT * FROM users"), s: await db.all("SELECT * FROM sessions"), t: await db.all("SELECT * FROM auth_tokens"), a: await db.all("SELECT * FROM audit_log") });
   return { db, mailer, c, svc, dump };
 }
@@ -203,7 +203,7 @@ describe("login", () => {
   test("unknown accounts cost about as much time as wrong passwords (dummy hash)", async () => {
     const db = new SqliteAdapter(":memory:"); migrate(db);
     const mailer = new MockMailer();
-    const svc = createAuthService({ db, mailer, store: new MemoryStore(), salt: "test-salt-123", iterations: 150_000 });
+    const svc = createAuthService({ db, mailer, store: new MemoryStore(), salt: "test-salt-123", iterations: 150_000, cfg: { unsafeFastHashForTests: true } });
     await svc.register({ email: "owner@acme.example", password: GOOD, businessName: "Acme" });
     await svc.verifyEmail({ token: mailer.last("verify_email").data.token });
     const time = async (email) => { const t = performance.now(); await svc.login({ email, password: "wrong wrong wrong!" }); return performance.now() - t; };
@@ -238,7 +238,7 @@ describe("login", () => {
   test("login upgrades an outdated hash", async () => {
     const w = world();
     const { email, password } = await registered(w);
-    const strong = createAuthService({ db: w.db, mailer: w.mailer, store: new MemoryStore(), salt: "test-salt-123", now: w.c.now, iterations: 3000 });
+    const strong = createAuthService({ db: w.db, mailer: w.mailer, store: new MemoryStore(), salt: "test-salt-123", now: w.c.now, iterations: 3000, cfg: { unsafeFastHashForTests: true } });
     assert.equal((await strong.login({ email, password })).ok, true);
     assert.match((await w.db.first("SELECT password_hash h FROM users")).h, /\$3000\$/);
   });
@@ -398,5 +398,19 @@ describe("audit trail and secrets", () => {
   test("audit rows cannot be altered", async () => {
     const w = world(); await registered(w);
     await assert.rejects(w.db.run("DELETE FROM audit_log"), /append-only/);
+  });
+});
+
+describe("hash strength cannot be silently weakened", () => {
+  test("the service refuses to start below the production iteration count unless a test explicitly opts out", () => {
+    const db = new SqliteAdapter(":memory:"); migrate(db);
+    const mk = (iterations, cfg) => () => createAuthService({ db, mailer: new MockMailer(), store: new MemoryStore(), salt: "test-salt-123", iterations, cfg });
+    assert.throws(mk(1500), /at least 600000/);
+    assert.throws(mk(599_999), /at least 600000/);
+    assert.throws(mk(1500, {}), /at least 600000/);
+    assert.throws(mk(1500, { unsafeFastHashForTests: "yes" }), /at least 600000/);
+    assert.doesNotThrow(mk(undefined));
+    assert.doesNotThrow(mk(PBKDF2_ITERATIONS));
+    assert.doesNotThrow(mk(1500, { unsafeFastHashForTests: true }));
   });
 });

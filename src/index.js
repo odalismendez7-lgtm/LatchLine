@@ -8,18 +8,29 @@ import { DbStore, MemoryStore, createLimiter, hashKey } from "./ratelimit/limite
 import { AIRouter } from "./ai/router.js";
 import { createProvider } from "./ai/registry.js";
 import { createNotifier, createChannelMap } from "./notify/registry.js";
+import { DbMockMailer } from "./auth/mailer.js";
 
 // Two modes, chosen by whether a D1 database is bound as env.DB:
 //   - no DB bound  -> the stateless PROTOTYPE below (what runs today; no storage)
 //   - DB bound     -> the full app in app.js (UNVERIFIED against real D1: KI-15)
 // The AI is always the labeled mock; real providers are refused by the registry.
-let appCache = { db: null, app: null };
+//
+// Owner accounts + dashboard (Stage 5/6) are OFF unless env.LATCHLINE_ACCOUNTS === "mock-local".
+// That mode uses the MOCK mailer only (nothing is ever sent) and exists for local development;
+// the checked-in wrangler.toml does not set it, so a deployment of this file serves no accounts
+// and no dashboard (KI-32). env.LATCHLINE_DEV_MAILBOX === "1" additionally exposes the simulated
+// mailbox, and only to localhost requests.
+let appCache = { db: null, key: null, app: null };
 function getApp(env) {
-  if (appCache.db !== env.DB) {
+  const accountsOn = env.LATCHLINE_ACCOUNTS === "mock-local";
+  const key = `${accountsOn}|${env.LATCHLINE_DEV_MAILBOX === "1"}`;
+  if (appCache.db !== env.DB || appCache.key !== key) {
     const db = new D1Adapter(env.DB);
     appCache = {
       db: env.DB,
+      key,
       app: createApp({
+        accounts: accountsOn ? { mailer: new DbMockMailer(db), devMode: env.LATCHLINE_DEV_MAILBOX === "1" } : null,
         db,
         store: new DbStore(db),
         salt: env.RATE_LIMIT_SALT || "",

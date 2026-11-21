@@ -43,6 +43,10 @@ Last updated: 2026-11-18 (Stage 4) · Status: DESIGN, plus implemented and teste
 
 The dashboard shows notification history and the `needsAttention` list, so a failed or undeliverable notification is now visible to an authorized person, using the exact honest wording from `src/notify/status.js`. It is still not an alert: nobody is paged. Dashboard and account failures return generic errors (never internals).
 
+## Stage 6 note
+
+Tested in real processes: clean restart and hard kill keep accounts, sessions, leads and the notification queue; an interrupted send is re-sent once after restart; a database write lock gives a calm 503 and the app recovers without a restart. Still untested on the Workers runtime and real D1 (KI-40).
+
 ## Measurement (to be built)
 
 Uptime/error rate, p50/p95 response latency, AI failure and fallback counts, notification success rate, time-to-first-response. Published in an operator view with the measurement period, and any limits documented here. Until measured, no numbers are claimed.

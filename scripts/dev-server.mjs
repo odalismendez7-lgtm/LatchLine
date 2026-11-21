@@ -7,6 +7,7 @@
 
 import { createServer } from "node:http";
 import { readFileSync, mkdirSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import { SqliteAdapter } from "../src/db/sqlite-adapter.js";
 import { migrate } from "../src/db/migrate-node.js";
 import { platformRepo, forBusiness } from "../src/db/tenant.js";
@@ -15,13 +16,13 @@ import { MemoryStore, DbStore } from "../src/ratelimit/limiter.js";
 import { AIRouter } from "../src/ai/router.js";
 import { createProvider } from "../src/ai/registry.js";
 import { createNotifier, createChannelMap } from "../src/notify/registry.js";
-import { MockMailer } from "../src/auth/mailer.js";
+import { DbMockMailer } from "../src/auth/mailer.js";
 import { demoAquaflowKb } from "../src/knowledge/demo-aquaflow.js";
 
 export const DEV_SITE_KEY = "sk_demo_local_0001";
 
-export async function startDevServer({ port = 8787, dbPath = ":memory:", host = "127.0.0.1", clientLimit, iterations } = {}) {
-  if (dbPath !== ":memory:") mkdirSync(new URL("../.data/", import.meta.url), { recursive: true });
+export async function startDevServer({ port = 8787, dbPath = ":memory:", host = "127.0.0.1", clientLimit, iterations, scheduleMs = 5000 } = {}) {
+  if (dbPath !== ":memory:") { dbPath = resolve(dbPath); mkdirSync(dirname(dbPath), { recursive: true }); }
   const db = new SqliteAdapter(dbPath);
   migrate(db);
   const platform = platformRepo(db);
@@ -36,9 +37,9 @@ export async function startDevServer({ port = 8787, dbPath = ":memory:", host = 
     await demo.notifications.contacts.markSimulatedVerified(c.id);
   }
   const notifier = createNotifier({ type: "mock" });
-  const mailer = new MockMailer(); // SIMULATED account emails: shown at /dev/simulated-mail, never sent
+  const mailer = new DbMockMailer(db); // SIMULATED account emails (kept in the local DB so they survive restarts): shown at /app#dev, never sent
   const app = createApp({
-    db, accounts: { mailer, devMode: true, ...(iterations ? { iterations } : {}) }, channels: createChannelMap([notifier]), store: new DbStore(db), salt: "dev-only-salt",
+    db, accounts: { mailer, devMode: true, ...(iterations ? { iterations, cfg: { unsafeFastHashForTests: true } } : {}) }, channels: createChannelMap([notifier]), store: new DbStore(db), salt: "dev-only-salt",
     router: new AIRouter({ providers: [createProvider({ type: "mock" })] }),
     ...(clientLimit ? { clientLimit } : {}),
   });
@@ -62,14 +63,16 @@ export async function startDevServer({ port = 8787, dbPath = ":memory:", host = 
     }
   });
   await new Promise((resolve) => server.listen(port, host, resolve));
-  const timer = setInterval(() => { app.runScheduled().catch(() => {}); }, 5000);
+  const timer = setInterval(() => { app.runScheduled().catch(() => {}); }, scheduleMs);
   timer.unref();
   return { server, db, app, notifier, mailer, port: server.address().port, close: () => { clearInterval(timer); return new Promise((r) => server.close(r)); } };
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   const port = Number(process.env.PORT || 8787);
-  const { port: p } = await startDevServer({ port, dbPath: process.env.DB_PATH || ".data/dev.sqlite" });
+  const { port: p, close } = await startDevServer({ port, dbPath: process.env.DB_PATH || ".data/dev.sqlite", scheduleMs: Number(process.env.SCHEDULE_MS || 5000) });
   console.log(`LATCHLINE dev server: http://127.0.0.1:${p}  (mock AI, local database, not a deployment)`);
+  const stop = async () => { await close(); process.exit(0); };
+  process.on("SIGINT", stop); process.on("SIGTERM", stop);
   console.log(`Dashboard: http://127.0.0.1:${p}/app  (DEMO authentication; emails are simulated, see /app#dev)`);
 }

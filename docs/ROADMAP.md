@@ -11,8 +11,9 @@ Last updated: 2026-11-17 · Each stage ends with: what was built, files changed,
 | 3 (done, 2026-11-17) | Data layer with tenant isolation, conversation engine, KB loading, response guard, lead capture with dedupe, rate limiting, emergency gaps closed, UI connected | 468 tests pass, 0 TODO. Carried forward: real D1 verification (KI-15), notifications/dashboard (KI-18), retention policy (KI-17), professional review (KI-12) |
 | 4 | Notifications outbox (mock), handoff, degraded mode, failure tests | Failed-notification and AI-outage tests passing |
 | 5 (done, 2026-11-19) | Auth, roles, owner dashboard (mobile + desktop), contact verification (simulated) | 705 tests pass, including cross-business and UI tests. Carried forward: KI-30 to KI-39 |
-| 6 | Entitlements/plans (no billing), analytics | Entitlement and metric-accuracy tests passing |
-| 7 | Security hardening (rate limits, validation, audit log), backup/restore drill, runbooks, readiness report | Full test matrix in `TEST_CASES.md` run and results recorded |
+| 6 (done as far as possible, 2026-11-19) | Runtime and database integration: real-process and Worker-entry integration tests, persistence, failure handling, local setup. **Cloudflare runtime tools could not be installed, so workerd/local-D1 runs and the hash CPU measurement remain open (KI-40, KI-30)** | 760 tests pass |
+| 7 | Entitlements/plans (no billing), analytics | Entitlement and metric-accuracy tests passing |
+| 8 | Security hardening (rate limits, validation, audit log), backup/restore drill, runbooks, readiness report | Full test matrix in `TEST_CASES.md` run and results recorded |
 
 ## Stage 4 (done, 2026-11-18): notifications and human handoff
 
@@ -24,7 +25,7 @@ Demo authentication with real logic and a mock mailer, roles, tenant-checked das
 
 ## Next up (proposal, needs founder go-ahead)
 
-Decisions that need you: (1) measure password hashing on a free local Workers runtime and decide how to handle KI-30; (2) choose and approve a real email provider after a cost/privacy/terms review (needed for real accounts, real contact verification and real notifications, KI-31/36); (3) approve any hosting. Engineering work that needs no spending: per-business notification budget and spam protection (KI-27), cleanup of unverified accounts (KI-33), retention/deletion policy (KI-17/38), accessibility review (KI-37).
+Decisions that need you: (0) allow package installs so the free local Cloudflare runtime (`wrangler`, local D1) can be installed and the Stage 6 integration tests rerun on it (KI-40); (1) measure password hashing on a free local Workers runtime and decide how to handle KI-30; (2) choose and approve a real email provider after a cost/privacy/terms review (needed for real accounts, real contact verification and real notifications, KI-31/36); (3) approve any hosting. Engineering work that needs no spending: per-business notification budget and spam protection (KI-27), cleanup of unverified accounts (KI-33), retention/deletion policy (KI-17/38), accessibility review (KI-37), a dashboard "Website" page for site key and allowed origins (KI-42).
 
 ## Future improvements (not scheduled)
 

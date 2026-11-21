@@ -1,6 +1,6 @@
 # Security Requirements
 
-Last updated: 2026-11-19 (Stage 5) · Status: REQUIREMENTS, partly implemented (see the table below). Not security-reviewed by anyone independent.
+Last updated: 2026-11-19 (Stage 6) · Status: REQUIREMENTS, partly implemented (see the table below). Not security-reviewed by anyone independent.
 
 This repository may be **public**. Never commit secrets, customer data, real business data, or database exports.
 
@@ -48,6 +48,19 @@ This repository may be **public**. Never commit secrets, customer data, real bus
 | Audit | Account, lead, settings, contact, team and export events; ids and field names only | No alerting |
 
 **Demo vs production.** What exists is real security logic running against a mock mailer on a local server. It is **demo authentication**. It becomes production authentication only after: real email delivery (KI-31), a measured hashing cost on the target platform (KI-30), HTTPS hosting re-tests (KI-39), bot protection (KI-33), and an independent security review. None has happened.
+
+## Stage 6: runtime-specific security notes
+
+| Topic | State |
+|---|---|
+| Platform cannot hash | Authentication fails closed (503, nothing created, no enumeration); simulated with a capped `deriveBits` in `tests/hash.platform.test.mjs`. Whether Workers really caps PBKDF2 at 100,000 is reported but unverified (KI-30) |
+| Hash strength | Startup guard refuses fewer than 600,000 iterations (tested, mutation-checked). Real cost on Workers unmeasured; Node suggests it exceeds the free CPU limit (KI-30). Unresolved, not weakened |
+| Exposure | The dashboard is reachable through the Worker entry only with `LATCHLINE_ACCOUNTS=mock-local`; default off and absent from `wrangler.toml` (tested, KI-32). Dev mailbox needs its own flag and a localhost request |
+| Persistence of secrets | Only hashes of passwords and tokens are stored. The dev-only `simulated_mail` table holds raw one-time tokens by design, purged after 2 hours (KI-41) |
+| Isolation in real processes | Cross-business attacks, hostile ids, missing CSRF and foreign origins were re-run over real HTTP against two server processes, before and after restarts |
+| Outages | A write lock (process tests) and injected D1 errors (Worker tests) give 503 without internals, no session cookie, no partial writes, identical answers for known and unknown emails, and automatic recovery |
+| Logs | Server output of the real processes was scanned: no passwords, session tokens or customer phone numbers |
+| Not verified | Workers runtime limits, isolate lifecycle (the app is cached in module memory), real D1 semantics, HTTPS behavior behind Cloudflare (KI-39, KI-40) |
 
 ## Known weaknesses today
 

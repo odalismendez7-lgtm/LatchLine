@@ -2,7 +2,7 @@
 
 Last updated: 2026-11-17 (Stage 3) · Status: PROPOSED (approved decisions are logged in `DECISIONS.md`)
 
-## Current state (after Stage 5)
+## Current state (after Stage 6)
 
 Built and tested (see `TEST_CASES.md`):
 
@@ -40,6 +40,18 @@ Stage 5 additions (after Stage 5):
 Dashboard request flow: same-origin check, cookie to session (idle/absolute expiry), CSRF header for changes, membership lookup for the URL's business id (404 if none), permission check (403), then a tenant handle for that business only, then role-based masking of customer contact details.
 
 Real providers later: replace the mock mailer with an adapter exposing `send` and `simulated:false`; the verification service, dispatcher guard and UI labels adapt automatically (simulated flag drives wording and what verification means).
+
+
+Stage 6 additions:
+
+- `migrations/0004_simulated_mail.sql` and `DbMockMailer` (`src/auth/mailer.js`): simulated mail kept in the database (dev only).
+- `src/index.js`: builds the full app on D1 and, only with `LATCHLINE_ACCOUNTS=mock-local`, enables accounts and the dashboard.
+- `src/auth/service.js`: hash-strength startup guard.
+- `src/dashboard/api.js`: database outage maps to 503; `client.js`: session-ended and outage messages.
+- `scripts/worker-sim.mjs` + `scripts/lib/d1-shim.mjs`: the real Worker entry on a D1-shaped SQLite shim (NOT the Workers runtime); `scripts/dev-server.mjs` (app on Node); `reset-local.mjs`, `measure-hash.mjs`.
+- `tests/runtime.process.test.mjs`, `worker.runtime.test.mjs`, `worker.ui.test.mjs`, `tests/helpers/proc.mjs`.
+
+Integration status: the application code, schema, auth, roles, dashboard, notifications and audit log run end to end on (1) Node with a SQLite file and (2) the Worker entry with the D1 adapter over a SQLite-backed shim, with data surviving restarts. They have **not** run on workerd or any D1 (KI-15, KI-40).
 
 Not built: production authentication (real email, MFA), real contact verification, real notification providers, delivery webhooks, entitlements, analytics, backups, embeddable widget, real AI, real D1 verification.
 

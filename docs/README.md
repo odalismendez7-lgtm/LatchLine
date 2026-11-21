@@ -17,5 +17,6 @@ These are the permanent project records. Keep them current: **whenever a decisio
 | `TEST_CASES.md` | Test categories and dated results |
 | `KNOWN_ISSUES.md` | Open and resolved problems |
 | `ROADMAP.md` | Stages and future improvements |
+| `LOCAL_DEVELOPMENT.md` | How to start, stop, reset and test locally; what is and is not real |
 
 Pre-Stage-1 files kept at the repo root (`index.html` and `src/index.js` were modified in Stages 2-3 and the changes are in `DECISIONS.md`): `LATCHLINE_AI_INSTRUCTIONS.md` (AI behavior rules v0.1), `AQUAFLOW_KNOWLEDGE_BASE.md` (test data only), `index.html` (demo page), `src/index.js` (prototype Worker).

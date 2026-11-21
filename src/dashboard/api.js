@@ -20,7 +20,7 @@ import { normalizeEmail } from "../validation/normalize.js";
 const MAX_BODY = 16 * 1024;
 const H = { "Content-Type": "application/json", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer", "X-Frame-Options": "DENY" };
 const out = (data, status = 200, extra = {}) => new Response(JSON.stringify(data), { status, headers: { ...H, ...extra } });
-const err = (status, error, extra = {}) => out({ error, ...extra }, status, status === 429 && extra.retryAfterSec ? { "Retry-After": String(extra.retryAfterSec) } : {});
+const err = (status, error, extra = {}) => out({ error, ...extra }, status, (status === 429 || status === 503) && extra.retryAfterSec ? { "Retry-After": String(extra.retryAfterSec) } : {});
 const AUTH_STATUS = { invalid_credentials: 401, email_not_verified: 403, rate_limited: 429, invalid_token: 400, weak_password: 400, invalid_email: 400, invalid_business_name: 400 };
 
 function readCookie(request, name) {
@@ -69,7 +69,7 @@ export function createDashboardApi({ db, auth, mailer, now = Date.now, devMode =
 
       if (devMode && p === "/dev/simulated-mail") {
         if (!["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)) return err(404, "Not found");
-        return out({ banner: "SIMULATED — nothing was sent. Development mailbox only.", messages: [...mailer.outbox].reverse().slice(0, 50) });
+        return out({ banner: "SIMULATED — nothing was sent. Development mailbox only.", messages: mailer.list ? await mailer.list(50) : [...mailer.outbox].reverse().slice(0, 50) });
       }
 
       const token = readCookie(request, cookieName(secure));
@@ -223,7 +223,11 @@ export function createDashboardApi({ db, auth, mailer, now = Date.now, devMode =
       } catch (e) { return e?.code === "invalid_data" ? err(409, "That change is not allowed") : dbErr(e); }
 
       return err(404, "Not found");
-    } catch {
+    } catch (e) {
+      // Never echo internals. A database outage is reported as such (503) so the page can say
+      // "try again shortly" instead of looking like a bug; everything else is a generic 500.
+      if (e?.name === "HashUnavailableError") return err(503, "auth_unavailable");
+      if (e?.name === "DbError" && e.code === "db_unavailable") return err(503, "temporarily_unavailable", { retryAfterSec: 5 });
       return err(500, "Something went wrong. Please try again.");
     }
   }

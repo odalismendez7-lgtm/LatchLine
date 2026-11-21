@@ -26,6 +26,8 @@ Try the demo locally (127.0.0.1 only, mock AI, local database, not a deployment)
 npm run dev
 ```
 
+Full instructions (start, stop, reset, test, and what is and is not real): [`docs/LOCAL_DEVELOPMENT.md`](docs/LOCAL_DEVELOPMENT.md). `npm run dev:worker` runs the real Worker entry code on Node (not the Cloudflare runtime); `npm run dev:reset` clears local data.
+
 Then open `http://127.0.0.1:8787/app` for the demo dashboard (sign-up emails appear in the simulated mailbox at `/app#dev`).
 
 ## Ground rules

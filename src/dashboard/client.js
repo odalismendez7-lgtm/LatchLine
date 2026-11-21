@@ -21,6 +21,8 @@ async function api(method, path, body) {
   try {
     const r = await fetch(path, { method, headers, credentials: "same-origin", body: body === undefined ? undefined : JSON.stringify(body) });
     let data = null; try { data = await r.json(); } catch (e) { data = null; }
+    // A 401 on an authenticated call means the session ended (idle or absolute expiry, logout elsewhere, or revoked).
+    if (r.status === 401 && S.me && !path.startsWith("/api/auth/")) { sessionEnded(); }
     return { status: r.status, ok: r.ok, data: data || {}, res: r };
   } catch (e) { return { status: 0, ok: false, data: { error: "network" } }; }
 }
@@ -28,9 +30,14 @@ const B = (p) => "/api/biz/" + encodeURIComponent(S.biz.id) + p;
 const can = (a) => S.biz && S.biz.permissions.includes(a);
 const root = $("#root");
 const fmt = (s) => { try { return new Date(s).toLocaleString(); } catch (e) { return s || ""; } };
-const NICE = { invalid_credentials: "Wrong email or password.", email_not_verified: "Please verify your email first.", rate_limited: "Too many attempts. Please wait and try again.", weak_password: "Use at least 12 characters and avoid common passwords.", invalid_email: "Enter a valid email address.", invalid_business_name: "Enter your business name (2–100 characters).", invalid_token: "That link is invalid or has expired.", network: "Could not reach the server.", cooldown: "Please wait a minute before requesting another code.", daily_limit: "Daily limit reached for this contact.", wrong_code: "That code is not correct.", too_many_attempts: "Too many wrong codes. Send a new code.", expired: "That code has expired. Send a new one.", no_open_code: "No active code. Send a new one.", duplicate: "That contact already exists.", invalid_contact: "That address is not valid." };
+const NICE = { auth_unavailable: "Sign-in is unavailable on this server: password protection could not run. Nothing was changed.", temporarily_unavailable: "The service is temporarily unavailable. Please try again in a few seconds.",  invalid_credentials: "Wrong email or password.", email_not_verified: "Please verify your email first.", rate_limited: "Too many attempts. Please wait and try again.", weak_password: "Use at least 12 characters and avoid common passwords.", invalid_email: "Enter a valid email address.", invalid_business_name: "Enter your business name (2–100 characters).", invalid_token: "That link is invalid or has expired.", network: "Could not reach the server.", cooldown: "Please wait a minute before requesting another code.", daily_limit: "Daily limit reached for this contact.", wrong_code: "That code is not correct.", too_many_attempts: "Too many wrong codes. Send a new code.", expired: "That code has expired. Send a new one.", no_open_code: "No active code. Send a new one.", duplicate: "That contact already exists.", invalid_contact: "That address is not valid." };
 const say = (r) => NICE[r.data.error] || NICE[r.data.code] || r.data.error || "Something went wrong.";
 
+function sessionEnded() {
+  if (!S.me) return;
+  S.me = null; S.csrf = null; S.biz = null; S.openLead = null; S.openConv = null; S.endedNotice = "Your session ended. Please sign in again.";
+  loginView();
+}
 function banner() {
   return h("div", { class: "demo", role: "note" }, h("strong", null, "DEMO authentication."), " Emails and verification codes are SIMULATED — nothing is sent to anyone. Not production-ready.");
 }
@@ -40,7 +47,8 @@ function toast(msg, bad) { S.notice = { msg, bad: !!bad, at: Date.now() }; paint
 
 // ---------------- signed-out screens ----------------
 function authShell(title, ...body) {
-  root.replaceChildren(banner(), h("main", { class: "auth" }, h("div", { class: "card" }, h("h1", null, "LATCHLINE"), h("p", { class: "muted" }, "Every inquiry has a next step."), h("h2", null, title), ...body)), h("div", { id: "toast", class: "toast", role: "status", hidden: true }));
+  const ended = S.endedNotice ? h("p", { class: "alert", role: "alert" }, S.endedNotice) : null; S.endedNotice = null;
+  root.replaceChildren(banner(), h("main", { class: "auth" }, h("div", { class: "card" }, h("h1", null, "LATCHLINE"), h("p", { class: "muted" }, "Every inquiry has a next step."), ended, h("h2", null, title), ...body)), h("div", { id: "toast", class: "toast", role: "status", hidden: true }));
 }
 function field(label, name, type = "text", extra = {}) { return h("label", null, label, h("input", { name, type, required: true, autocomplete: extra.ac, minlength: extra.min, maxlength: extra.max || 200 })); }
 function msgBox() { return h("p", { class: "msg", id: "msg", role: "alert" }); }
