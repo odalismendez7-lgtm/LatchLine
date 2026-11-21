@@ -12,7 +12,7 @@ import { DbMockMailer } from "./auth/mailer.js";
 
 // Two modes, chosen by whether a D1 database is bound as env.DB:
 //   - no DB bound  -> the stateless PROTOTYPE below (what runs today; no storage)
-//   - DB bound     -> the full app in app.js (UNVERIFIED against real D1: KI-15)
+//   - DB bound     -> the full app in app.js (verified on LOCAL D1 under workerd; UNVERIFIED on hosted D1: KI-15)
 // The AI is always the labeled mock; real providers are refused by the registry.
 //
 // Owner accounts + dashboard (Stage 5/6) are OFF unless env.LATCHLINE_ACCOUNTS === "mock-local".

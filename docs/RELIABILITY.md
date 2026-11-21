@@ -53,4 +53,4 @@ Uptime/error rate, p50/p95 response latency, AI failure and fallback counts, not
 
 ## Known limitations today
 
-No monitoring, no backups, no notifications. The database path has only run on local SQLite and a fake D1 (KI-15). Free-tier D1 daily write limits could cut off lead saving mid-day (KI-16); the engine would report it as NOT saved.
+No monitoring, no backups, no notifications. The database path has run on local SQLite, a D1-shaped shim, and (2026-11-21) real local D1 under workerd, including restart, hard kill and a database fault; hosted D1 is untested (KI-15). Free-tier D1 daily write limits could cut off lead saving mid-day (KI-16); the engine would report it as NOT saved.

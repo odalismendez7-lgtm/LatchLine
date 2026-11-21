@@ -51,11 +51,11 @@ Stage 6 additions:
 - `scripts/worker-sim.mjs` + `scripts/lib/d1-shim.mjs`: the real Worker entry on a D1-shaped SQLite shim (NOT the Workers runtime); `scripts/dev-server.mjs` (app on Node); `reset-local.mjs`, `measure-hash.mjs`.
 - `tests/runtime.process.test.mjs`, `worker.runtime.test.mjs`, `worker.ui.test.mjs`, `tests/helpers/proc.mjs`.
 
-Integration status: the application code, schema, auth, roles, dashboard, notifications and audit log run end to end on (1) Node with a SQLite file and (2) the Worker entry with the D1 adapter over a SQLite-backed shim, with data surviving restarts. They have **not** run on workerd or any D1 (KI-15, KI-40).
+Integration status: the application code, schema, auth, roles, dashboard, notifications and audit log run end to end on (1) Node with a SQLite file and (2) the Worker entry with the D1 adapter over a SQLite-backed shim, with data surviving restarts. **Since 2026-11-21 they also run on the real local Cloudflare runtime (workerd with local D1; `docs/RUNTIME_VALIDATION.md`).** Not yet run on hosted D1 or the hosted Workers service, and local workerd cannot show CPU, memory or the production PBKDF2 limit (KI-15, KI-30, KI-40).
 
 Not built: production authentication (real email, MFA), real contact verification, real notification providers, delivery webhooks, entitlements, analytics, backups, embeddable widget, real AI, real D1 verification.
 
-Assessment: Cloudflare Workers remains suitable. Real D1 behavior is untested (KI-15).
+Assessment: Cloudflare Workers remains suitable. Local D1 behavior is validated; hosted D1 is untested (KI-15). Password hashing on the hosted service is unresolved (KI-30).
 
 ## Platform limits (Cloudflare, read 2026-11-16; details in `PLANS_AND_PRICING.md`)
 

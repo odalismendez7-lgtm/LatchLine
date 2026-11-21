@@ -1,7 +1,9 @@
 // Applies migrations/*.sql in order to a SqliteAdapter (local dev and tests).
 // Already-applied files are skipped, so running twice is safe.
-// On Cloudflare D1 the same files are applied with `wrangler d1 migrations apply`,
-// which needs an account and has NOT been run (docs/KNOWN_ISSUES.md KI-15).
+// On Cloudflare D1 the same files are applied with `wrangler d1 migrations apply`.
+// The LOCAL form (`wrangler d1 migrations apply --local`) was run on 2026-11-21 and produces a schema identical
+// to this file's (tests/workerd.probe.test.mjs). Applying to a hosted database needs an account and has NOT been
+// done (docs/KNOWN_ISSUES.md KI-15).
 
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";

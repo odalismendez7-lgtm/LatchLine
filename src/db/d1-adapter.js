@@ -1,8 +1,8 @@
 // Cloudflare D1 adapter. STATUS: written to D1's documented API
-// (prepare/bind/all/first/run/batch) and tested ONLY against a fake D1 built on
-// SQLite (tests/db.adapters.test.mjs). It has NEVER been run against a real D1
-// database, because creating one needs a Cloudflare account and deployment,
-// which the founder has not approved. Treat as unverified (docs/KNOWN_ISSUES.md KI-15).
+// (prepare/bind/all/first/run/batch). Tested against a fake D1 built on SQLite AND (since 2026-11-21) against
+// REAL LOCAL D1 under workerd (tests/workerd.runtime.test.mjs, tests/workerd.probe.test.mjs). It has NEVER been
+// run against HOSTED D1, because that needs a Cloudflare account and deployment, which the founder has not
+// approved (docs/KNOWN_ISSUES.md KI-15). On D1 a raw BEGIN is rejected: transactions here are batch() only.
 //
 // batch() relies on D1 running batched statements as one transaction.
 

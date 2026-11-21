@@ -1,6 +1,6 @@
 # Feature Status
 
-Last updated: 2026-11-19 (Stage 6)
+Last updated: 2026-11-21 (Stage 6 runtime validation)
 
 A feature is **Done** only when it is implemented, tested (tests passing and recorded in `TEST_CASES.md`), and reviewed. Nothing below is Done yet, including after Stage 6. "In progress" means part is built and tested but the requirement is not yet met. "Prototype" means a stand-in that does not meet the requirement.
 
@@ -36,3 +36,4 @@ A feature is **Done** only when it is implemented, tested (tests passing and rec
 | 4 | 2026-11-18 | Notification outbox (migration 0002), provider-independent notifier adapter with mock default (real providers refused), dispatcher with retries/backoff/priority/leases, idempotent enqueue, delivery-confirmation model, human-handoff requests, emergency escalation to all verified channels, scheduled recovery. 574 tests, all pass. Mock only; nothing deployed; no real notification ever sent. |
 | 5 | 2026-11-19 | Owner accounts (migration 0003), password hashing, sessions, recovery design, memberships and roles, server-side tenant authorization, contact verification (simulated only), dashboard API and responsive UI, settings mapped to the verified knowledge base, audit events. 705 tests, all pass. Mock mailer, mock notifier, mock AI only; nothing deployed; the dashboard is not served by the Worker entry point; demo authentication only. |
 | 6 | 2026-11-19 | Runtime and database integration, as far as possible without the Cloudflare runtime tools (not installable here): real-process tests with restarts, a hard kill and a database fault; the real Worker entry on a D1-shaped shim; durable simulated mailbox (migration 0004); hash-strength guard; 503 and session-ended handling; local setup guide. 760 tests, all pass (including fail-closed behavior when the platform cannot run the hash). **Not done: real workerd/wrangler/local D1 runs, hash CPU on Workers (KI-40, KI-30).** Nothing deployed; mock providers only. |
+| 6b | 2026-11-21 | Runtime validation on the real local Cloudflare runtime (workerd + local D1, free, local only): migrations, D1 batch/foreign keys/RETURNING, auth, sessions, failure handling, persistence, hard kill, concurrency, fail-closed hashing under an emulated cap. 790 tests, all pass. **Not solved: password hashing on the hosted service (production PBKDF2 cap unknown; Free-plan CPU 10 ms), CPU/memory limits (not testable locally). Nothing deployed.** See `docs/RUNTIME_VALIDATION.md`. |

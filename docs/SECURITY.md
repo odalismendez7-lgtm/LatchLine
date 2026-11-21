@@ -60,7 +60,7 @@ This repository may be **public**. Never commit secrets, customer data, real bus
 | Isolation in real processes | Cross-business attacks, hostile ids, missing CSRF and foreign origins were re-run over real HTTP against two server processes, before and after restarts |
 | Outages | A write lock (process tests) and injected D1 errors (Worker tests) give 503 without internals, no session cookie, no partial writes, identical answers for known and unknown emails, and automatic recovery |
 | Logs | Server output of the real processes was scanned: no passwords, session tokens or customer phone numbers |
-| Not verified | Workers runtime limits, isolate lifecycle (the app is cached in module memory), real D1 semantics, HTTPS behavior behind Cloudflare (KI-39, KI-40) |
+| Not verified | Workers CPU and memory limits and the production PBKDF2 cap (local workerd shows none of them, KI-30, KI-40), isolate eviction (the app is cached in module memory), hosted D1 semantics, HTTPS behavior behind Cloudflare (KI-39, KI-40). Validated on local workerd 2026-11-21: tenant isolation, sessions, CSRF/origin checks, single-use tokens and throttles under concurrency, fail-closed hashing |
 
 ## Known weaknesses today
 

@@ -1,7 +1,7 @@
-# UNVERIFIED EXAMPLE: written for a LOCAL-ONLY Cloudflare runtime (`wrangler dev --local`) but never run,
-# because wrangler/workerd could not be installed when this was written (docs/LOCAL_DEVELOPMENT.md, KI-40).
-# Copy to wrangler.local.toml (do not commit secrets). `--local` uses a local file-backed
-# D1 simulation and does NOT contact Cloudflare, create a remote database, or deploy.
+# LOCAL-ONLY config for the real Cloudflare runtime on your own computer (`wrangler dev --local`).
+# VERIFIED 2026-11-21 with wrangler 4.166.0 / workerd 2026-11-19 (docs/RUNTIME_VALIDATION.md); used by tests/workerd.runtime.test.mjs.
+# `--local` uses a local file-backed D1 and does NOT contact Cloudflare, create a remote database, log in, or deploy.
+# Never deploy with this file: it switches on the MOCK-mail dashboard. Do not put secrets in it.
 name = "latchline-local"
 main = "src/index.js"
 compatibility_date = "2026-11-16"

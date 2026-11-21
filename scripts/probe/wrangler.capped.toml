@@ -1,0 +1,17 @@
+# LOCAL-ONLY. The REAL Worker entry behind a wrapper that emulates a 100,000-iteration PBKDF2 cap (see capped-entry.js).
+# Accounts and the simulated mailbox are switched on for LOCAL testing only, exactly as in wrangler.local.example.toml.
+name = "latchline-capped"
+main = "capped-entry.js"
+compatibility_date = "2026-11-16"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "latchline-local"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "../../migrations"
+
+[vars]
+RATE_LIMIT_SALT = "local-dev-only-salt-change-me"
+LATCHLINE_ACCOUNTS = "mock-local"
+LATCHLINE_DEV_MAILBOX = "1"
+PBKDF2_CAP = "100000"

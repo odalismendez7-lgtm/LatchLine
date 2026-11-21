@@ -9,9 +9,17 @@
     "dev": "node scripts/dev-server.mjs",
     "dev:worker": "node scripts/worker-sim.mjs",
     "dev:reset": "node scripts/reset-local.mjs",
-    "measure:hash": "node scripts/measure-hash.mjs"
+    "measure:hash": "node scripts/measure-hash.mjs",
+    "test:workerd": "node --no-warnings --test tests/workerd.runtime.test.mjs tests/workerd.probe.test.mjs",
+    "measure:workerd": "node --no-warnings scripts/probe/measure.mjs",
+    "count:d1": "node --no-warnings scripts/probe/count-d1-calls.mjs",
+    "migrate:local": "wrangler d1 migrations apply latchline-local --local --persist-to .data/wrangler -c wrangler.local.example.toml",
+    "dev:workerd": "wrangler dev --local --persist-to .data/wrangler -c wrangler.local.example.toml"
   },
   "engines": {
     "node": ">=22.5"
+  },
+  "devDependencies": {
+    "wrangler": "^4.166.0"
   }
 }

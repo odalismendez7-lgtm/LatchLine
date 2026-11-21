@@ -1,0 +1,14 @@
+# LOCAL-ONLY. Same probe Worker, with a CPU limit configured, to find out whether the LOCAL runtime enforces it.
+name = "latchline-probe-limit"
+main = "worker.js"
+compatibility_date = "2026-11-16"
+compatibility_flags = ["nodejs_compat"]
+
+[limits]
+cpu_ms = 10
+
+[[d1_databases]]
+binding = "DB"
+database_name = "latchline-local"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "../../migrations"

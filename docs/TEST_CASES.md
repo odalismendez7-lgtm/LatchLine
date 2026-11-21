@@ -1,8 +1,8 @@
 # Test Cases and Results
 
-Last updated: 2026-11-18 (Stage 4)
+Last updated: 2026-11-21 (Stage 6 runtime validation)
 
-Run all tests: `npm test` (Node 22.5+, no dependencies, no network, no cost).
+Run all tests: `npm test` (Node 22.5+, no network, no cost). The real-runtime files need the free local `wrangler` dev dependency (`npm install`); they skip with a visible reason without it.
 
 Rule: nothing is called production-ready unless the required checks below have passed and the result is recorded here with a date. "TODO" tests are required behavior that does not exist yet. They are expected to fail, are shown as failing, and are never counted as passing.
 
@@ -25,6 +25,31 @@ Rule: nothing is called production-ready unless the required checks below have p
 | Backup restore drill | Not built |
 
 ## Result log
+
+### 2026-11-21: Stage 6 runtime validation (real local Cloudflare runtime)
+
+Command: `npm test` on Node v22.23.5, wrangler 4.166.0, workerd 2026-11-19, local D1, after the last change. Branch `stage-6-runtime-validation` from `28c1d0bc`. Full report: `docs/RUNTIME_VALIDATION.md`.
+
+| File | Tests | Pass | Fail | Skipped |
+|---|---|---|---|---|
+| Existing files (unchanged) | 760 | 760 | 0 | 0 |
+| `tests/workerd.runtime.test.mjs` (new) | 18 | 18 | 0 | 0 |
+| `tests/workerd.probe.test.mjs` (new) | 12 | 12 | 0 | 0 |
+| **Total** | **790** | **790** | **0** | **0** |
+
+What actually ran, on workerd with a real local D1 (migrations applied by `wrangler d1 migrations apply --local`), over real HTTP:
+- `workerd.runtime` (14 tests): dashboard page and CSP; registration, simulated verification, login with the full-strength hash stored; no account enumeration; simulated contact verification; a customer chat creating a lead and the mock notification sent by the cron handler, labeled simulated; audit events; cross-business and forged-request denial; **12 concurrent uses of one token (exactly 1 wins) and 14 concurrent wrong logins (exactly 10 counted)**; a real `D1_ERROR` fault giving a clean 503 with nothing half-written and self-recovery; idle/absolute/logout session expiry; persistence across clean restart and **hard kill**, an interrupted send re-sent once; delete without resurrection; runtime output free of passwords, tokens and phone numbers. Plus accounts-OFF (1 test) and **fail-closed hashing under an EMULATED 100,000 cap (3 tests)**.
+- `workerd.probe` (12 tests): migrations apply once and re-run as a no-op, schema identical to the Node path; `batch()` atomic, foreign keys enforced, `RETURNING` single-use, raw `BEGIN` rejected; PBKDF2 600,000 runs locally; scrypt available and runs at five OWASP-listed parameter sets, argon2 absent, WebAssembly cannot be compiled at run time; **pinned limitations of the local runtime** (CPU limit not enforced and CPU time reported as 0; memory limit not enforced).
+
+Measurements (not pass/fail): hashing times (`npm run measure:workerd`), D1 queries per request (`npm run count:d1`, most 16), bundle 234 KiB (62.6 KiB gzipped) via `wrangler deploy --dry-run`.
+
+Failures during this work, all mine and fixed (details in `RUNTIME_VALIDATION.md`): a test burst that correctly hit the per-IP login limit, and a schema-comparison filter that missed one bookkeeping table.
+
+Could NOT be tested, and why:
+- CPU limits, memory limit and the production PBKDF2 cap: local workerd does not enforce or report them (proven by the pinned tests). Needs a deployed probe on a real Cloudflare account (founder approval).
+- Hosted D1, real cron timing, isolate eviction and cold start, a cron sweep with a large backlog (KI-15, KI-40, KI-44).
+- Real email, SMS or AI (disabled by design).
+- This is not evidence the product is production-ready. It is not.
 
 ### 2026-11-19: Stage 6 (runtime and database integration)
 
