@@ -15,6 +15,13 @@ const RULES = [
   ["guarantee", /\b(?:guarantee[d]?|promise[d]?|definitely|certainly will|100%)\b/i],
   ["time_promise", /\b(?:within|in)\s+(?:the next\s+)?\d+\s*(?:minutes?|hours?|mins?|hrs?)\b|\b(?:today|tonight|tomorrow)\s+(?:at|by|between)\b|\bby\s+\d{1,2}\s?(?:am|pm)\b/i],
   ["instruction_leak", /\b(?:system prompt|my instructions|as an ai language model|ignore (?:all |previous )?instructions|developer message)\b/i],
+  // Stage 6c: confirmations, availability, coverage, service and policy claims the model has no way to know.
+  ["appointment_claim", /\b(?:appointment|visit|booking|service call|slot|reservation)\b[^.?!]{0,40}\b(?:is|are|has been|have been|was|will be)\s+(?:now\s+|all\s+)?(?:confirmed|set|scheduled|booked|made|reserved|locked in)\b|\b(?:you(?:'re| are)|you(?:'ve| have))\s+(?:all\s+)?(?:set|booked|scheduled|confirmed)\b/i],
+  ["availability_claim", /\b(?:we (?:have|do have|got)|there (?:is|are)|i (?:see|have))\b[^.?!]{0,30}\b(?:availability|openings?|slots?|appointments? available|time available)\b|\b24\s?\/\s?7\b|\b24 hours\b|around the clock|\balways (?:available|open)\b|\bopen (?:now|today|tonight|tomorrow|on weekends)\b/i],
+  ["policy_claim", /\bfree (?:estimates?|quotes?|inspections?|diagnostics?|service calls?|of charge)\b|\bno (?:extra |additional |hidden )?(?:charge|fee|cost)s?\b|\bwarrant(?:y|ies)\b|\b(?:licensed|insured|bonded)\b|\bsatisfaction\b|\bmoney[- ]back\b|\brefunds?\b|\bdiscounts?\b|\bcoupons?\b/i],
+  ["coverage_claim", /\b(?:yes,?\s+)?we (?:do )?(?:service|serve|cover|come to|travel to)\b[^.?!]{0,30}\b(?:area|zip|town|city|you|your|there)\b/i],
+  ["service_affirmation", /\byes,?\s+(?:we|i)\s+(?:can|do|will|offer|provide|install|repair|fix|replace|handle|service)\b/i],
+  ["callback_promise", /\b(?:we|someone|somebody|the team|the business|a (?:plumber|technician|person|representative|manager))\s+(?:will|'ll|shall|is going to|are going to)\s+(?:call|contact|reach|text|email|get back|follow up|respond|reply|be in touch)\b/i],
   ["medical_legal_advice", /\b(?:you should (?:not )?(?:turn|touch|use|relight|flip)|safe to (?:use|touch|stay))\b/i],
 ];
 

@@ -1,6 +1,6 @@
 # Roadmap and Future Improvements
 
-Last updated: 2026-11-17 · Each stage ends with: what was built, files changed, tests run, errors/limitations, next step. Nothing deploys publicly or costs money without founder approval.
+Last updated: 2026-11-22 · Each stage ends with: what was built, files changed, tests run, errors/limitations, next step. Nothing deploys publicly or costs money without founder approval.
 
 ## Stages
 
@@ -12,6 +12,7 @@ Last updated: 2026-11-17 · Each stage ends with: what was built, files changed,
 | 4 | Notifications outbox (mock), handoff, degraded mode, failure tests | Failed-notification and AI-outage tests passing |
 | 5 (done, 2026-11-19) | Auth, roles, owner dashboard (mobile + desktop), contact verification (simulated) | 705 tests pass, including cross-business and UI tests. Carried forward: KI-30 to KI-39 |
 | 6 (done as far as possible, 2026-11-19) | Runtime and database integration: real-process and Worker-entry integration tests, persistence, failure handling, local setup. **Update 2026-11-21: the runtime validation ran on real local workerd and local D1 (790 tests pass, `RUNTIME_VALIDATION.md`). Still open: hashing on the hosted service, CPU/memory limits, hosted D1 (KI-30, KI-40, KI-15)** | 790 tests pass |
+| 6c (built, tests pass, 2026-11-22) | Conversation intelligence around the mock AI: in-conversation memory, no repeated questions or answers, frustration/confusion/handoff reading, stuck-conversation recovery, minimal progressive lead collection, honest answers about status/dispatch/booking, tighter guard and knowledge pressure handling, repeated-emergency handling. Deterministic code only (`src/engine/signals.js`, `phrases.js`, `engine.js`). **Added between 6 and 7 at the founder's request; it does not replace Stage 7/8. Real-model behavior is NOT verified (no provider approved)** | 926 tests pass (136 new); see `TEST_CASES.md` and KI-46 to KI-49 |
 | 7 | Entitlements/plans (no billing), analytics | Entitlement and metric-accuracy tests passing |
 | 8 | Security hardening (rate limits, validation, audit log), backup/restore drill, runbooks, readiness report | Full test matrix in `TEST_CASES.md` run and results recorded |
 

@@ -23,6 +23,10 @@ const INTENTS = [
   { intent: "contact_phone", key: "contact_phone", pattern: /\b(?:phone|phone number|call you|contact|reach you|number)\b/ },
 ];
 
+// Questions about guarantees, licensing, insurance, free estimates... The knowledge base has no verified key for these;
+// unless an approved FAQ answers one, the only honest reply is "not verified" (never a guess, never "yes").
+const POLICY = /\b(?:warrant(?:y|ies)|guarantee[ds]?|licensed|license|insured|insurance|bonded|refunds?|money[- ]back|discounts?|coupons?|senior|military|free (?:estimates?|quotes?|inspections?|diagnostics?|service calls?|of charge)|is it free|ballpark|ball park|cheapest|payment plans?|financing|credit cards?|cash|payment methods?|do you accept)\b/;
+
 const ZIP = /\b(\d{5})\b/g;
 
 function normalize(text) {
@@ -122,6 +126,8 @@ export function retrieve(kb, rawMessage) {
 
   const faq = matchFaqs(kb, message);
   if (faq) results.push(faq);
+  else if (POLICY.test(message) && !results.some((r) => r.intent === "pricing")) results.push(unknown("policy", "policy", "not_verified"));
+  else if (POLICY.test(message)) { /* the pricing answer (verified or "not verified") already covers it */ }
 
   let status;
   if (results.length === 0) status = "no_match";

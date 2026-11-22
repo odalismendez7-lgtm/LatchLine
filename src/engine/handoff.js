@@ -13,11 +13,15 @@ const PATTERNS = [
   /\bpersona\s+real\b/i,
 ];
 
-const NOT_REQUEST = [/\bnot\s+(?:a\s+)?(?:real\s+)?(?:person|human)\b/i, /\b(?:are|r)\s+you\s+(?:a\s+)?(?:real\s+)?(?:person|human|bot)\b/i, /\bdon'?t\s+(?:want|need)\s+(?:to\s+)?(?:talk|speak)\b/i];
+const NOT_REQUEST = [/\b(?:am\s+i\s+(?:talking|speaking|chatting|typing)\s+(?:to|with)|is\s+(?:this|that|it))\s+(?:a\s+|an\s+)?(?:real\s+|live\s+|actual\s+)?(?:person|human|bot|robot)\s*\??\s*$/i, /\bnot\s+(?:a\s+)?(?:real\s+)?(?:person|human)\b/i, /\b(?:are|r)\s+you\s+(?:a\s+)?(?:real\s+)?(?:person|human|bot)\b/i, /\bdon'?t\s+(?:want|need)\s+(?:to\s+)?(?:talk|speak)\b/i];
 
 export function wantsHuman(message) {
   const t = String(message ?? "").normalize("NFC");
   if (t.length > 1200) return false;
+  // Judge each clause on its own so "are you a real person? I want to talk to a human" and
+  // "I don't want to talk to a bot, get me a real person" are still requests, while a lone identity question is not.
+  const clauses = t.split(/[.?!;,]+/).map((c) => c.trim()).filter(Boolean);
+  if (clauses.some((c) => PATTERNS.some((r) => r.test(c)) && !NOT_REQUEST.some((r) => r.test(c)))) return true;
   if (NOT_REQUEST.some((r) => r.test(t))) return false;
   return PATTERNS.some((r) => r.test(t));
 }

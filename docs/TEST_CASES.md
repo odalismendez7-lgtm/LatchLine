@@ -26,6 +26,23 @@ Rule: nothing is called production-ready unless the required checks below have p
 
 ## Result log
 
+### 2026-11-22: Stage 6c conversation intelligence (deterministic dialogue layer, mock AI only)
+
+Result: full suite 926 tests, 926 pass, 0 fail (790 before this stage + 136 new). New files: `tests/conversation.signals.test.mjs` (signal detectors incl. false-positive lists, odd input, regex speed), `tests/conversation.test.mjs` (scripted transcripts through the real engine and an in-memory database: memory, corrections, repetition, frustration/handoff, stuck recovery, minimal collection, honesty, emergencies, failure recovery, tenant isolation, review regressions), `tests/conversation.property.test.mjs` (guard table, knowledge policy answers, partial leads downstream, 10 seeded random 60-turn runs over two businesses with invariants), `tests/helpers/convo.mjs`.
+
+What the random runs checked on every turn: a non-empty reply; no invented confirmation/arrival/price text; "recorded" only with a real lead for that conversation; no identical consecutive replies; no markup echoed; leads and conversations never cross businesses; stored state stays bounded. A one-off run of 300 extra seeds (not kept as a test) found 0 violations after the fixes below.
+
+Bugs the new tests/review found and fixed (kept as regression tests): empty reply on some state combinations (random run); repeat-reply check silently ignored replies longer than 300 characters (random run); "my name is ..." taken as the problem description; "that's not my phone number" answered with the business phone; reset left the old question; "hi" and instruction-like text stored as the problem; "reset the breaker" wiped the chat; "nothing else works" read as "never mind"; a lead saved in the same turn as "nothing has been recorded"; an annoyed description discarded; "shut it off but still pouring" read as a false alarm; "are you a real person? I want a human" ignored.
+
+Deliberate changes to 2 existing tests (see DECISIONS 60). Checks that the tests can fail: removing the ask cap failed 11 tests, removing the appointment guard rule failed 3, removing the repeat-reply memory failed 4 (each restored).
+
+Limits of this run (what it does NOT show):
+- No real language model was used; the mock AI only. Nothing here shows how a real model would answer behind the guards (KI-46).
+- All conversations are ones we wrote or generated from a fixed list of messages. No real customer transcripts. English only outside the emergency layer.
+- The seeded runs are a bounded search, not a proof. Phrasing we did not think of can still be misread.
+- Emergency wording was not reviewed by a licensed professional (KI-12). Emergency chats without contact details still create no lead (KI-23/KI-47).
+- This is not evidence the product or the AI is production-ready. It is not.
+
 ### 2026-11-21: Stage 6 runtime validation (real local Cloudflare runtime)
 
 Command: `npm test` on Node v22.23.5, wrangler 4.166.0, workerd 2026-11-19, local D1, after the last change. Branch `stage-6-runtime-validation` from `28c1d0bc`. Full report: `docs/RUNTIME_VALIDATION.md`.
