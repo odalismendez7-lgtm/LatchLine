@@ -95,6 +95,21 @@ Deploy a one-endpoint **probe Worker** (no customer data, no secrets; it would o
 5. Limits quoted from Cloudflare's docs were read through a summarizing fetch tool, and the workerd issue through a cached mirror with no date. Re-verify before any spend or deployment (KI-13).
 6. Sandbox note: Wrangler's `Request.cf` lookup was blocked (harmless); a proxy warning and an "AI agent" notice appear in its output.
 
+## Hosted Free-plan probe: prepared, NOT run (2026-11-21)
+
+The founder approved one disposable Free-plan probe. **It could not be run from the Claude session**, so there are **no hosted results yet**, no resource was created on Cloudflare, and nothing needs cleaning up:
+
+- The session's network policy denies `api.cloudflare.com`, `dash.cloudflare.com` and `workers.cloudflare.com` (HTTP 403 from the egress proxy). I did not try to route around a policy denial.
+- There is no Cloudflare login or API token in the session, and I did not create or use an account. Wrangler's `deploy --temporary` (an anonymous preview account) was not used: it is not the approved Free account, and it is blocked as well. Re-checked after a long pause: nothing changed.
+
+Prepared in `scripts/hosted-probe/` (no LATCHLINE code, no database, no secrets, no cron, no custom domain; every endpoint needs a random key supplied at deploy time, otherwise a bare 404):
+- `worker.js`: PBKDF2-SHA256/512, scrypt and a CPU spin loop over a fixed meaningless string; returns only ok/error, and records the real error text if the platform throws.
+- `run.mjs`: runs 20 cases x N repeats (PBKDF2-SHA256 at 1,000 / 10,000 / 50,000 / 100,000 / 100,001 / 150,000 / 210,000 / 300,000 / 600,000, SHA-512 210,000, five scrypt sets, three spin sizes) and prints a table.
+- `README.md`: deploy steps, and the removal and verification steps (`wrangler delete`, then confirm the URL no longer answers).
+- Verified only against **local workerd** (all 20 cases ran; the local results are not hosted evidence and must not be cited as such).
+
+What this means for LATCHLINE today: nothing changed. KI-30 and KI-40 stay open; the hashing code is untouched (600,000 iterations, fail-closed).
+
 ## Decisions for the founder (no action taken)
 
 1. **Approve one real-runtime hashing test?** A throwaway probe Worker on a free Cloudflare account answers the production-cap question definitively. Exposes a public URL (with no data); no cost on the Free plan.

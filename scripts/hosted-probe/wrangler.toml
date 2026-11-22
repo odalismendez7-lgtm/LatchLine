@@ -1,0 +1,12 @@
+# DISPOSABLE PROBE for the REAL hosted Workers FREE plan. Not LATCHLINE. Delete after use (see README.md here).
+# No bindings, no database, no routes, no cron, no custom domain, nothing paid. Reachable only on the free
+# *.workers.dev address, and only with the random key passed at deploy time (--var PROBE_KEY:...).
+name = "latchline-disposable-probe"
+main = "worker.js"
+compatibility_date = "2026-11-16"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = true
+preview_urls = false
+
+[observability]
+enabled = false
