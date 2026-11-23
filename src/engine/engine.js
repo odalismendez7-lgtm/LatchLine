@@ -29,7 +29,7 @@ import { normalizeMessage, sanitizeText, MAX_ISSUE_CHARS } from "../validation/n
 import { extractContact, extractName, extractUrgency, isMostlyContactData } from "./extract.js";
 import { guardAiReply } from "./guard.js";
 import { forBusiness } from "../db/tenant.js";
-import { VARIANTS } from "../db/notifications.js";
+import { VARIANTS, MAX_CONTACT_REVISIONS } from "../db/notifications.js";
 import { wantsHuman } from "./handoff.js";
 import { analyze, fingerprint } from "./signals.js";
 import { pick, PROMPTS, RETRY, WHY, SAY } from "./phrases.js";
@@ -63,7 +63,7 @@ const DONE_INTENT = /\b(?:that'?s (?:all|it)|that is (?:all|it)|just (?:send|pas
 
 const initialState = () => ({
   stage: "collecting", slots: {}, awaiting: null, emergency: null, history: [], handoff: false, leadId: null, pendingNotifications: [],
-  asked: {}, settled: {}, used: {}, recent: [], leadSnap: null, partialFailNoted: false, alerted: false, contactNotified: false, handoffQueued: false, partialNoted: false, frustration: 0, offeredHandoff: false, pendingOffer: null,
+  asked: {}, settled: {}, used: {}, recent: [], leadSnap: null, partialFailNoted: false, alerted: false, contactNotified: false, contactRev: 0, handoffQueued: false, partialNoted: false, frustration: 0, offeredHandoff: false, pendingOffer: null,
   lastReplyFp: "", lastUserFp: "", userRepeats: 0, turns: 0, contactStuck: false, nearLimitSaid: false,
 });
 
@@ -95,7 +95,7 @@ function sanitizeState(raw) {
     awaiting: ORDER.includes(s.awaiting) ? s.awaiting : null,
     handoff: !!s.handoff,
     history: Array.isArray(s.history) ? s.history.filter((h) => h && typeof h.content === "string" && (h.role === "user" || h.role === "assistant")).slice(-HISTORY_TURNS * 2) : [],
-    pendingNotifications: Array.isArray(s.pendingNotifications) ? s.pendingNotifications.filter((p) => p && typeof p.kind === "string").map((p) => ({ kind: p.kind, priority: p.priority, variant: VARIANTS.includes(p.variant) ? p.variant : null })).slice(0, 10) : [],
+    pendingNotifications: Array.isArray(s.pendingNotifications) ? s.pendingNotifications.filter((p) => p && typeof p.kind === "string").map((p) => ({ kind: p.kind, priority: p.priority, variant: VARIANTS.includes(p.variant) ? p.variant : null, revision: Number.isInteger(p.revision) && p.revision >= 0 && p.revision <= MAX_CONTACT_REVISIONS ? p.revision : 0 })).slice(0, 10) : [],
     asked: numMap(s.asked), settled: strMap(s.settled), used: numMap(s.used),
     recent: Array.isArray(s.recent) ? s.recent.filter((r) => r && typeof r.fp === "string" && Number.isInteger(r.n)).slice(-8) : [],
     frustration: Number.isInteger(s.frustration) ? Math.max(0, Math.min(s.frustration, 10)) : 0,
@@ -108,7 +108,7 @@ function sanitizeState(raw) {
     contactStuck: !!s.contactStuck, nearLimitSaid: !!s.nearLimitSaid,
     leadSnap: s.leadSnap && typeof s.leadSnap === "object" && !Array.isArray(s.leadSnap)
       ? Object.fromEntries(["name", "phone", "email", "zip", "urgency", "issue"].map((k) => [k, typeof s.leadSnap[k] === "string" ? s.leadSnap[k].slice(0, 1200) : null])) : null,
-    alerted: !!s.alerted, contactNotified: !!s.contactNotified, handoffQueued: !!s.handoffQueued, partialNoted: !!s.partialNoted,
+    alerted: !!s.alerted, contactNotified: !!s.contactNotified, contactRev: Number.isInteger(s.contactRev) ? Math.max(0, Math.min(s.contactRev, 100)) : 0, handoffQueued: !!s.handoffQueued, partialNoted: !!s.partialNoted,
   };
 }
 
@@ -244,16 +244,16 @@ export async function handleMessage(deps, input) {
     if (!state.pendingNotifications.length || !state.leadId) return;
     const still = [];
     for (const p of state.pendingNotifications) {
-      try { await tenant.notifications.enqueueForLead({ leadId: state.leadId, conversationId: conv.id, kind: p.kind, priority: p.priority, variant: p.variant ?? null }); }
+      try { await tenant.notifications.enqueueForLead({ leadId: state.leadId, conversationId: conv.id, kind: p.kind, priority: p.priority, variant: p.variant ?? null, revision: p.revision ?? 0 }); }
       catch { still.push(p); }
     }
     state.pendingNotifications = still;
   };
   let queuedNow = 0;
-  const queue = async (kind, variant = null) => {
-    try { await tenant.notifications.enqueueForLead({ leadId: state.leadId, conversationId: conv.id, kind, priority: priority(), variant }); queuedNow += 1; return true; }
+  const queue = async (kind, variant = null, revision = 0) => {
+    try { await tenant.notifications.enqueueForLead({ leadId: state.leadId, conversationId: conv.id, kind, priority: priority(), variant, revision }); queuedNow += 1; return true; }
     catch {
-      state.pendingNotifications = [...state.pendingNotifications.filter((p) => !(p.kind === kind && (p.variant ?? null) === variant)), { kind, priority: priority(), variant }];
+      state.pendingNotifications = [...state.pendingNotifications.filter((p) => !(p.kind === kind && (p.variant ?? null) === variant && (p.revision ?? 0) === revision)), { kind, priority: priority(), variant, revision }];
       degraded.notifications = true;
       return false;
     }
@@ -266,7 +266,8 @@ export async function handleMessage(deps, input) {
   // Returns { created, failed, contactAdded }. Safe to call on every turn and to retry: one lead per conversation
   // (database-enforced), notifications are idempotent, and a failure is retried on the next message.
   const syncEmergencyLead = async () => {
-    const out = { created: false, failed: false, contactAdded: false };
+    const out = { created: false, failed: false, contactAdded: false, updateOnly: false };
+    const hadLead = !!state.leadId;
     const sl = state.slots;
     if (!state.emergency || (!sl.issue && !hasContact(sl))) return out;
     const record = leadRecord(state, kb);
@@ -294,15 +295,18 @@ export async function handleMessage(deps, input) {
       state.leadSnap = snapOf(sl);
       state.leadStatus = hasContact(sl) ? "saved" : "partial";
       out.contactAdded = u.contactAdded;
+      // The customer corrected a phone/email that was already on the lead: the business gets one more alert with the
+      // new details (capped), because an alert that already went out still shows the old ones.
+      if (u.contactChanged && state.contactRev < MAX_CONTACT_REVISIONS) { state.contactRev += 1; state.contactNotified = false; }
       state.partialNoted = state.partialNoted || false;
     } catch {
-      out.failed = true;
+      out.failed = true; out.updateOnly = hadLead;
       degraded.database = true;
       return out;
     }
     // alerts: the first one as soon as the lead exists; one follow-up when contact details arrive (idempotent keys)
     if (!state.alerted) { if (await queue("new_lead")) state.alerted = true; if (hasContact(sl)) state.contactNotified = true; }
-    else if (hasContact(sl) && !state.contactNotified && (await queue("new_lead", "contact_added"))) state.contactNotified = true;
+    else if (hasContact(sl) && !state.contactNotified && (await queue("new_lead", "contact_added", state.contactRev))) state.contactNotified = true;
     if (state.handoff && !state.handoffQueued && (await queue("human_requested"))) state.handoffQueued = true;
     return out;
   };
@@ -561,7 +565,8 @@ export async function handleMessage(deps, input) {
     if (retried && state.settled[retried]) retried = null;
     const sync = state.emergency ? await syncEmergencyLead() : { created: false, failed: false };
     if (sync.created && !hasContact(state.slots) && !state.partialNoted) { state.partialNoted = true; parts.push(SAY.partialRecorded); }
-    else if (sync.failed && !state.partialFailNoted) { state.partialFailNoted = true; parts.push(`${SAY.partialNotSaved} ${contactAdvice(kb)}`.trim()); }
+    else if (sync.failed && !state.partialFailNoted) { state.partialFailNoted = true; parts.push(`${sync.updateOnly ? SAY.updateNotSaved : SAY.partialNotSaved} ${contactAdvice(kb)}`.trim()); }
+    if (sync.failed) for (const ack of [...SAY.updated, ...SAY.fixing, ...SAY.skipped]) { const i = parts.indexOf(ack); if (i >= 0) parts.splice(i, 1); } // never "I've updated that" beside "not saved"
     if (!sync.failed) state.partialFailNoted = false;
     const missing = neededSlots(state);
     const canSave = missing.length === 0 && hasContact(state.slots) && !!state.slots.issue;

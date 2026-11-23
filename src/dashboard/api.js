@@ -153,7 +153,7 @@ export function createDashboardApi({ db, auth, mailer, now = Date.now, devMode =
       switch (key) {
         case "GET overview": return out({ role, overview: await T.dashboard.overview(), notificationsNeedingAttention: can(role, "notifications.read") ? (await T.notifications.needsAttention({ now: new Date(now()).toISOString() })).length : undefined });
         case "GET leads": {
-          let r; try { r = await T.dashboard.searchLeads({ status: q.get("status"), urgent: q.get("urgent"), incomplete: q.get("incomplete"), q: q.get("q"), limit: q.get("limit") ?? 25, offset: q.get("offset") ?? 0 }); } catch (e) { return e?.code === "invalid_data" ? err(400, "Unknown status") : dbErr(e); }
+          let r; try { r = await T.dashboard.searchLeads({ status: q.get("status"), urgent: q.get("urgent"), incomplete: q.get("incomplete"), q: q.get("q"), limit: q.get("limit") ?? 25, offset: q.get("offset") ?? 0, contactHidden: !can(role, "leads.read_contact") }); } catch (e) { return e?.code === "invalid_data" ? err(400, "Unknown status") : dbErr(e); }
           return out({ total: r.total, leads: r.rows.map((l) => maskLead(l, role)) });
         }
         case "GET leads/export.csv": {

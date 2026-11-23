@@ -109,6 +109,7 @@ export const SAY = {
   junk: ["I couldn't read that. Could you say it a different way?", "Sorry, that didn't come through clearly. Could you type it again?"],
   partialRecorded: "I've recorded your emergency message for the business team to review, but they have no way to reach you yet, and I can't promise when anyone will see it.",
   partialNotSaved: "I wasn't able to save your emergency message just now, so the business has NOT received it.",
+  updateNotSaved: "I wasn't able to save that change just now, so the business still has the details I recorded earlier.",
   noContactPartial: "Your emergency message is already recorded for the business team, but without a phone number or email they can't reach you from it.",
   abandonPartial: "Understood. The emergency message I already recorded stays on file for the business team to review. I can't promise when anyone will see it.",
   resetPartial: "I can't take back the emergency message that is already recorded for the business team, so I won't start over. You can still send a phone number or other details to add to it.",

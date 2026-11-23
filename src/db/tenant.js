@@ -187,36 +187,72 @@ export function forBusiness(db, businessId) {
      * Returns { changed: [...fields], contactAdded, emergencyAdded }.
      */
     async update(id, patch = {}) {
+      if (!patch || typeof patch !== "object" || Array.isArray(patch)) throw new DbError("invalid_data", "patch must be an object");
+      // Text is stored well-formed (a lone UTF-16 half would be silently rewritten by the database and fail the read-back).
+      patch = Object.fromEntries(Object.entries(patch).map(([k, v]) => [k, typeof v === "string" ? v.toWellFormed() : v]));
+      // Defence in depth: the engine validates first, but this repository never trusts its caller's types or sizes.
+      const CAPS = { name: 100, phone: 20, email: 254, zip: 10, issueText: 2000, summary: 2000 };
+      for (const [k, max] of Object.entries(CAPS)) {
+        const v = patch[k];
+        if (v !== undefined && v !== null && (typeof v !== "string" || v.length > max)) throw new DbError("invalid_data", `invalid ${k}`);
+      }
+      for (const k of ["name", "phone", "email", "zip"]) if (typeof patch[k] === "string" && /[\u0000-\u001f\u007f]/.test(patch[k])) throw new DbError("invalid_data", `invalid ${k}`);
+      if (typeof patch.email === "string" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(patch.email)) throw new DbError("invalid_data", "invalid email");
+      if (patch.urgency !== undefined && patch.urgency !== null && !["now", "can_wait"].includes(patch.urgency)) throw new DbError("invalid_data", "invalid urgency");
+      if (patch.emergencyCategories !== undefined && (!Array.isArray(patch.emergencyCategories) || patch.emergencyCategories.length > 20 || patch.emergencyCategories.some((c) => typeof c !== "string" || !/^[a-z][a-z0-9_]{0,59}$/.test(c)))) throw new DbError("invalid_data", "invalid emergencyCategories");
       return guard(async () => {
-        const cur = await db.first("SELECT * FROM leads WHERE id = ? AND business_id = ?", [id, B]);
-        if (!cur) throw new DbError("not_found", "lead not found for this business");
-        const sets = [], params = [], changed = [];
-        const setCol = (col, val) => { if (val !== cur[col]) { sets.push(`${col} = ?`); params.push(val); changed.push(col); } };
-        for (const col of ["name", "phone", "email", "zip", "urgency"]) if (col in patch) setCol(col, patch[col] ?? null);
-        if (typeof patch.issueText === "string" && patch.issueText.trim()) setCol("issue_text", patch.issueText);
-        if (typeof patch.summary === "string") setCol("summary", patch.summary);
-        if ("zipInVerifiedArea" in patch) setCol("zip_in_verified_area", patch.zipInVerifiedArea ? "yes" : "unconfirmed");
-        if (patch.emergency) setCol("emergency", 1);
-        if (Array.isArray(patch.emergencyCategories) && patch.emergencyCategories.length) {
-          const before = parse(cur.emergency_categories, []);
-          const merged = [...new Set([...before, ...patch.emergencyCategories])];
-          if (merged.length !== before.length) { sets.push("emergency_categories = ?"); params.push(json(merged)); changed.push("emergency_categories"); }
+        // Optimistic concurrency: every write is conditional on the columns still holding what we read ("compare and
+        // set"). If another request changed the lead in between, nothing is written and we re-read and try again, so
+        // two parallel requests can never silently overwrite each other's categories or lose a previous value.
+        for (let attempt = 0; attempt < 5; attempt++) {
+          const cur = await db.first("SELECT * FROM leads WHERE id = ? AND business_id = ?", [id, B]);
+          if (!cur) throw new DbError("not_found", "lead not found for this business");
+          const sets = [], params = [], changed = [], expect = {}, previous = {};
+          const setCol = (col, val) => {
+            if (val === cur[col]) return;
+            sets.push(`${col} = ?`); params.push(val); changed.push(col); expect[col] = val;
+            if (["name", "phone", "email", "zip"].includes(col) && cur[col] != null) previous[col] = cur[col]; // an overwritten customer detail is never lost silently
+          };
+          for (const col of ["name", "phone", "email", "zip", "urgency"]) if (patch[col] !== undefined) setCol(col, patch[col]);
+          if (typeof patch.issueText === "string" && patch.issueText.trim()) setCol("issue_text", patch.issueText);
+          if (typeof patch.summary === "string") setCol("summary", patch.summary);
+          if ("zipInVerifiedArea" in patch) setCol("zip_in_verified_area", patch.zipInVerifiedArea ? "yes" : "unconfirmed");
+          if (patch.emergency) setCol("emergency", 1);
+          let mergedCats = null;
+          if (Array.isArray(patch.emergencyCategories) && patch.emergencyCategories.length) {
+            const before = parse(cur.emergency_categories, []);
+            const merged = [...new Set([...before, ...patch.emergencyCategories])];
+            if (merged.length !== before.length) { mergedCats = merged; sets.push("emergency_categories = ?"); params.push(json(merged)); changed.push("emergency_categories"); }
+          }
+          const had = !!(cur.phone || cur.email);
+          const willPhone = patch.phone !== undefined ? patch.phone : cur.phone, willEmail = patch.email !== undefined ? patch.email : cur.email;
+          const contactChanged = had && changed.some((c) => c === "phone" || c === "email") && ("phone" in previous || "email" in previous);
+          const result = { changed, contactAdded: !had && !!(willPhone || willEmail), contactChanged, emergencyAdded: !!patch.emergency && !cur.emergency };
+          if (!changed.length) return result;
+          const t = nowIso(), evtId = newId("evt");
+          const cas = changed.map((c) => `${c} IS ?`).join(" AND ");
+          const au = audit("lead_updated", id, { fields: changed });
+          const res = await db.batch([
+            { sql: `UPDATE leads SET ${sets.join(", ")}, updated_at = ? WHERE id = ? AND business_id = ? AND ${cas}`, params: [...params, t, id, B, ...changed.map((c) => cur[c])] },
+            // The history row and audit row exist only if the UPDATE above really changed the lead.
+            { sql: "INSERT INTO lead_events (id, business_id, lead_id, type, detail, created_at) SELECT ?,?,?,?,?,? WHERE changes() > 0", params: [evtId, B, id, "updated", json({ fields: changed, ...(Object.keys(previous).length ? { previous } : {}), ...(changed.some((c) => c === "phone" || c === "email") ? { hadContact: had } : {}) }), t] },
+            { sql: au.sql.replace("VALUES (?,?,?,?,?,?,?)", "SELECT ?,?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM lead_events WHERE id = ?)"), params: [...au.params, evtId] },
+          ]);
+          if (!res[0] || res[0].changes < 1) continue; // someone else got there first: re-read and recompute
+          // Read back EVERY column that was written; any mismatch means the write did not take (unless a LATER update by
+          // another request has since changed the same column, which leaves its own newer history row).
+          const back = await db.first("SELECT * FROM leads WHERE id = ? AND business_id = ?", [id, B]);
+          const mismatch = !back || Object.entries(expect).some(([c, v]) => back[c] !== v) || (mergedCats && !mergedCats.every((c) => parse(back.emergency_categories, []).includes(c)));
+          if (mismatch) {
+            const later = back ? await db.first("SELECT COUNT(*) AS n FROM lead_events WHERE business_id = ? AND lead_id = ? AND type = 'updated' AND id != ? AND created_at >= ?", [B, id, evtId, t]) : null;
+            if (!later || !(later.n > 0)) throw new DbError("not_persisted", "lead readback did not match what was written");
+          }
+          return result;
         }
-        const had = !!(cur.phone || cur.email);
-        const willPhone = "phone" in patch ? patch.phone ?? null : cur.phone, willEmail = "email" in patch ? patch.email ?? null : cur.email;
-        const result = { changed, contactAdded: !had && !!(willPhone || willEmail), emergencyAdded: !!patch.emergency && !cur.emergency };
-        if (!changed.length) return result;
-        const t = nowIso();
-        await db.batch([
-          { sql: `UPDATE leads SET ${sets.join(", ")}, updated_at = ? WHERE id = ? AND business_id = ?`, params: [...params, t, id, B] },
-          { sql: "INSERT INTO lead_events (id, business_id, lead_id, type, detail, created_at) VALUES (?,?,?,?,?,?)", params: [newId("evt"), B, id, "updated", json({ fields: changed }), t] },
-          audit("lead_updated", id, { fields: changed }),
-        ]);
-        const back = await db.first("SELECT phone, email, emergency FROM leads WHERE id = ? AND business_id = ?", [id, B]);
-        if (!back || back.phone !== willPhone || back.email !== willEmail) throw new DbError("not_persisted", "lead readback did not match what was written");
-        return result;
+        throw new DbError("not_persisted", "lead kept changing under concurrent updates");
       });
     },
+
     async list({ limit = 50 } = {}) {
       return guard(async () => (await db.all(
         `SELECT id, name, phone, email, zip, issue_category, urgency, emergency, status, duplicate_count, created_at, ${CONTACT_MISSING} FROM leads WHERE business_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?`,

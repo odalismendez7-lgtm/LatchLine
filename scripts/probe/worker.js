@@ -30,6 +30,12 @@ async function d1Probe(DB) {
   // 2. a good batch applies everything and reports per-statement changes.
   const ok = await DB.batch([DB.prepare("INSERT INTO probe_t (id, v) VALUES (1, 'a')"), DB.prepare("INSERT INTO probe_t (id, v) VALUES (2, 'b')"), DB.prepare("UPDATE probe_t SET v = 'c' WHERE id = 2")]);
   out.goodBatchChanges = ok.map((r) => r.meta?.changes);
+  // 2b. (Stage 6d audit) the compare-and-set pattern used by leads.update: a follow-up INSERT guarded by changes() inside one batch.
+  const cas0 = await DB.batch([DB.prepare("UPDATE probe_t SET v = 'cas_lost' WHERE id = 2 AND v IS ?").bind("not-the-current-value"), DB.prepare("INSERT INTO probe_child (id, pid) SELECT 101, 2 WHERE changes() > 0")]);
+  out.casLostChanges = cas0.map((r) => r.meta?.changes);
+  const cas1 = await DB.batch([DB.prepare("UPDATE probe_t SET v = 'cas_won' WHERE id = 2 AND v IS ?").bind("c"), DB.prepare("INSERT INTO probe_child (id, pid) SELECT 102, 2 WHERE changes() > 0")]);
+  out.casWonChanges = cas1.map((r) => r.meta?.changes);
+  out.casChildIds = (await DB.prepare("SELECT id FROM probe_child ORDER BY id").all()).results.map((r) => r.id);
   out.rowsAfterGoodBatch = (await DB.prepare("SELECT COUNT(*) n FROM probe_t").first()).n;
   // 3. foreign keys enforced?
   out.foreignKeysPragma = (await DB.prepare("PRAGMA foreign_keys").first());

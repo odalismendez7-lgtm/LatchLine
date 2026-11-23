@@ -28,13 +28,21 @@ export function dashboardRepo(db, B) {
         };
       });
     },
-    async searchLeads({ status, urgent, incomplete, q, limit = 25, offset = 0 } = {}) {
+    async searchLeads({ status, urgent, incomplete, q, limit = 25, offset = 0, contactHidden = false } = {}) {
       return guard(async () => {
         const where = ["business_id = ?"], p = [B];
         if (status !== undefined && status !== null && status !== "") { if (!LEAD_STATUSES.includes(status)) throw new DbError("invalid_data", "unknown status"); where.push("status = ?"); p.push(status); }
         if (urgent === true || urgent === "1" || urgent === "true") where.push("emergency = 1");
         if (incomplete === true || incomplete === "1" || incomplete === "true") where.push("phone IS NULL AND email IS NULL");
-        if (typeof q === "string" && q.trim()) { const l = like(q.trim().slice(0, 60)); where.push("(name LIKE ? ESCAPE '\\' OR issue_text LIKE ? ESCAPE '\\' OR zip LIKE ? ESCAPE '\\')"); p.push(l, l, l); }
+        if (typeof q === "string" && q.trim()) {
+          const term = q.trim().slice(0, 60), l = like(term);
+          if (contactHidden) {
+            // The caller may not see phone/email, which customers also type into free text. Searching that text (even by
+            // letters) lets them confirm or rebuild a hidden value piece by piece through the result count, so they
+            // can search name and ZIP only.
+            where.push("(name LIKE ? ESCAPE '\\' OR zip LIKE ? ESCAPE '\\')"); p.push(l, l);
+          } else { where.push("(name LIKE ? ESCAPE '\\' OR issue_text LIKE ? ESCAPE '\\' OR zip LIKE ? ESCAPE '\\')"); p.push(l, l, l); }
+        }
         const lim = clamp(limit, 1, 100, 25), off = clamp(offset, 0, 100000, 0);
         const rows = await db.all(`SELECT ${leadCols} FROM leads WHERE ${where.join(" AND ")} ORDER BY emergency DESC, created_at DESC, rowid DESC LIMIT ? OFFSET ?`, [...p, lim, off]);
         const total = (await db.first(`SELECT COUNT(*) n FROM leads WHERE ${where.join(" AND ")}`, p)).n;

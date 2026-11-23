@@ -10,10 +10,12 @@
 //   - Errors are stored as short codes, never customer text or provider bodies.
 
 import { DbError } from "./errors.js";
-import { nowIso, newId, json, guard } from "./util.js";
+import { nowIso, newId, json, parse, guard } from "./util.js";
 import { normalizeEmail, normalizePhone } from "../validation/normalize.js";
 
 export const VARIANTS = ["contact_added", "emergency_added"];
+// A customer who CHANGES their contact details after the alert went out gets one more alert per change, up to this many.
+export const MAX_CONTACT_REVISIONS = 3;
 export const KINDS = ["new_lead", "human_requested", "repeat_contact"];
 export const PRIORITIES = { emergency: 0, urgent: 1, normal: 2 };
 export const DEFAULT_MAX_ATTEMPTS = 5;
@@ -95,7 +97,8 @@ export function notificationsRepo(db, B, leadsRepo) {
     contacts,
 
     /** Idempotent. Returns { created, existing, undeliverable }. */
-    async enqueueForLead({ leadId, conversationId, kind, priority, variant = null, now = nowIso() }) {
+    async enqueueForLead({ leadId, conversationId, kind, priority, variant = null, revision = 0, now = nowIso() }) {
+      if (!Number.isInteger(revision) || revision < 0 || revision > MAX_CONTACT_REVISIONS) throw new DbError("invalid_data", "invalid revision");
       if (!KINDS.includes(kind)) throw new DbError("invalid_data", "unknown notification kind");
       if (variant !== null && !VARIANTS.includes(variant)) throw new DbError("invalid_data", "unknown notification variant");
       if (!(priority in PRIORITIES)) throw new DbError("invalid_data", "unknown priority");
@@ -115,11 +118,11 @@ export function notificationsRepo(db, B, leadsRepo) {
                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                   ON CONFLICT(business_id, idempotency_key) DO NOTHING`,
             params: [id, B, leadId, kind, priority, PRIORITIES[priority], t.channel, t.address,
-              `${kind}:${leadId}:${conversationId ?? "-"}:${t.channel}:${t.address ?? "-"}${variant ? `:${variant}` : ""}`,
+              `${kind}:${leadId}:${conversationId ?? "-"}:${t.channel}:${t.address ?? "-"}${variant ? `:${variant}` : ""}${variant === "contact_added" && revision > 0 ? `:r${revision}` : ""}`,
               none ? "undeliverable" : "queued", max, none ? null : now, none ? "no_verified_contact" : null, now, now, variant],
           });
         }
-        stmts.push(audit("notifications_enqueued", leadId, { kind, priority, variant, count: targets.length }));
+        stmts.push(audit("notifications_enqueued", leadId, { kind, priority, variant, revision, count: targets.length }));
         const res = await db.batch(stmts);
         const created = res.slice(0, targets.length).reduce((n, r) => n + r.changes, 0);
         return { created, existing: targets.length - created, undeliverable: recipients.length === 0 };
@@ -233,22 +236,68 @@ export function notificationsRepo(db, B, leadsRepo) {
       });
     },
 
-    /** Recovery: leads saved but never queued (e.g. a crash between save and enqueue). Idempotent. */
+    /**
+     * Recovery: alerts that should exist but do not (e.g. a crash or outbox failure between a database write and the
+     * queueing that follows it, when the customer then left and nothing retries). Idempotent: every enqueue uses the
+     * normal idempotency keys, so anything already queued is left alone. Covers:
+     *   - a saved lead that never got its first (new_lead) alert;
+     *   - an emergency lead whose contact details were added or changed after the first alert (contact_added, per revision);
+     *   - an ordinary lead upgraded to an emergency (emergency_added).
+     */
     async reconcileMissing({ sinceDays = 7, now = nowIso(), limit = 100 } = {}) {
       return guard(async () => {
         const since = new Date(new Date(now).getTime() - sinceDays * 86400000).toISOString();
+        const lim = Math.min(Math.max(1, limit | 0), 500);
         const rows = await db.all(
           `SELECT l.id, l.conversation_id, l.emergency, l.urgency FROM leads l
             WHERE l.business_id = ? AND l.created_at >= ?
               AND NOT EXISTS (SELECT 1 FROM notifications n WHERE n.business_id = l.business_id AND n.lead_id = l.id AND n.kind = 'new_lead')
-            ORDER BY l.created_at LIMIT ?`, [B, since, Math.min(Math.max(1, limit | 0), 500)]);
+            ORDER BY l.created_at LIMIT ?`, [B, since, lim]);
         let enqueued = 0;
         for (const l of rows) {
           const priority = l.emergency ? "emergency" : l.urgency === "now" ? "urgent" : "normal";
           const r = await api.enqueueForLead({ leadId: l.id, conversationId: l.conversation_id, kind: "new_lead", priority, now });
           enqueued += r.created;
         }
-        return { checked: rows.length, enqueued };
+        // Follow-up alerts, driven by the lead's own update history (one 'updated' event per real change). Newest leads
+        // first so a backlog can never starve recent emergencies. "Already alerted" is judged per lead + variant +
+        // revision, NOT per recipient, so adding a recipient later never replays old alerts to them.
+        const emergencies = await db.all(
+          `SELECT l.id, l.conversation_id, l.phone, l.email FROM leads l
+            WHERE l.business_id = ? AND l.emergency = 1 AND l.created_at >= ?
+              AND EXISTS (SELECT 1 FROM lead_events e WHERE e.business_id = l.business_id AND e.lead_id = l.id AND e.type = 'updated')
+            ORDER BY l.created_at DESC LIMIT 500`, [B, since]);
+        let followUps = 0;
+        for (const l of emergencies) {
+          if (followUps >= lim) break;
+          const events = await db.all("SELECT detail FROM lead_events WHERE business_id = ? AND lead_id = ? AND type = 'updated' ORDER BY created_at, rowid LIMIT 100", [B, l.id]);
+          const want = new Set(); // "variant" or "contact_added:<rev>"
+          let rev = 0;
+          for (const e of events) {
+            const d = parse(e.detail, {}), f = d.fields;
+            if (!Array.isArray(f)) continue;
+            if (f.includes("emergency")) want.add("emergency_added");
+            if (f.includes("phone") || f.includes("email")) {
+              if (d.previous && (d.previous.phone || d.previous.email)) { rev += 1; want.add(`contact_added:${rev}`); }       // replaced an earlier value
+              else if (d.hadContact === false || (d.hadContact === undefined && !d.previous)) want.add("contact_added:0");     // contact arrived for the first time
+              // contact ADDED to a lead that already had some (e.g. email beside a phone) sends no follow-up
+            }
+          }
+          if (!l.phone && !l.email) { for (const k of [...want]) if (k.startsWith("contact_added")) want.delete(k); } // nothing to tell them
+          if (!want.size) continue;
+          const have = await db.all("SELECT variant, idempotency_key FROM notifications WHERE business_id = ? AND lead_id = ? AND variant IS NOT NULL", [B, l.id]);
+          const haveSet = new Set(have.map((h) => (h.variant === "contact_added" ? `contact_added:${/:r(\d+)$/.exec(h.idempotency_key)?.[1] ?? 0}` : h.variant)));
+          let did = false;
+          for (const k of want) {
+            if (haveSet.has(k)) continue;
+            const [variant, r] = k.split(":");
+            if (variant === "contact_added" && Number(r) > MAX_CONTACT_REVISIONS) continue;
+            const q = await api.enqueueForLead({ leadId: l.id, conversationId: l.conversation_id, kind: "new_lead", priority: "emergency", variant, revision: Number(r ?? 0), now });
+            enqueued += q.created; did = true;
+          }
+          if (did) followUps += 1;
+        }
+        return { checked: rows.length + emergencies.length, enqueued };
       });
     },
   };

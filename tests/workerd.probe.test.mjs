@@ -54,6 +54,12 @@ describe("local D1 semantics the app relies on (probe Worker on workerd)", { ski
     assert.equal(b.rowsAfterFailedBatch, 0, "nothing from the failed batch was kept");
     assert.deepEqual(b.goodBatchChanges, [1, 1, 1]); assert.equal(b.rowsAfterGoodBatch, 2);
   });
+  test("compare-and-set inside a batch: an INSERT guarded by changes() runs only when the UPDATE before it changed a row (leads.update relies on this)", async () => {
+    const { body: b } = await get("/d1");
+    assert.deepEqual(b.casLostChanges, [0, 0], "lost the race: nothing updated, guarded insert skipped");
+    assert.deepEqual(b.casWonChanges, [1, 1], "won: update applied, guarded insert ran");
+    assert.deepEqual(b.casChildIds, [102]);
+  });
   test("foreign keys are enforced by D1 even though the app never sets PRAGMA foreign_keys", async () => {
     const { body: b } = await get("/d1");
     assert.equal(b.foreignKeysPragma.foreign_keys, 1); assert.equal(b.fkViolationRejected, true);

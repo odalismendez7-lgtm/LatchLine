@@ -20,7 +20,8 @@ export function sanitizeText(input, { maxLength = MAX_MESSAGE_CHARS } = {}) {
     .replace(CONTROL_AND_INVISIBLE, "")
     .replace(/\s+/g, " ")
     .trim()
-    .slice(0, maxLength);
+    .slice(0, maxLength)
+    .toWellFormed(); // slicing (or a crafted message) can leave half an emoji; the database would silently change it and every read-back would then disagree
 }
 
 export function normalizeMessage(input) {

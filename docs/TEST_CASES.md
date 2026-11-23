@@ -26,6 +26,12 @@ Rule: nothing is called production-ready unless the required checks below have p
 
 ## Result log
 
+### 2026-11-23: Stage 6d independent security and reliability audit
+
+Result: full suite 1043 tests, 1043 pass, 0 fail (991 before; 51 new in `tests/audit.emergency.test.mjs` and 1 new local-D1 probe test for the compare-and-set pattern). Findings, severity, fixes and unresolved risks: `docs/SECURITY_AUDIT_6d.md`. Method: attack scripts first (each suspected bug reproduced before fixing), mutation checks (each fix removed again to prove its test fails), then two independent reviewer passes by agents that had not written the code; the second pass found two more bugs (odd-separator phone redaction, split-emoji text) which were fixed and re-tested. Bugs found: A1 to A10 in the audit document. No test was weakened; the weak assertions the reviewer pointed out (cap test passing with zero alerts) were tightened.
+
+Limits: mock AI, mock notifier, in-memory SQLite and local workerd only. Hosted D1, real delivery, real customers and a real model were NOT tested. Not production-ready.
+
 ### 2026-11-22: Stage 6d emergency partial-lead persistence (KI-23/KI-47)
 
 Result: full suite 991 tests, 991 pass, 0 fail (926 before + 65 new in `tests/emergency.partial.test.mjs`; some existing assertions changed deliberately, see below). Covered: abandoned emergency after the safety message (lead + one alert, no contact, nothing invented); incomplete contact (phone only, email only, declined, junk); duplicate and retried messages and parallel requests (one lead, one alert, idempotency keys); tenant isolation (other business cannot read or update the lead); database failure at create/update (customer told NOT saved, safety text still shown, recovery on a later message with no duplicate); notification/outbox failure (lead kept, alert retried, reply never claims notification); later completion (phone/email/ZIP/name update the same lead, one `contact_added` alert); emergency after an ordinary recorded request; emergency after a merged request; reset / never-mind / declined-contact with an existing lead; dashboard filter and counts; alert rendering without contact; seeded random runs with invariants.

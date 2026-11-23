@@ -20,8 +20,10 @@ export async function authorizeBusiness({ auth, db, session, businessId, action 
 }
 
 const PHONE_RE = /(?:\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}/g;
+// Any run of 10+ digits with any number of non-alphanumeric characters between digits ("512 - 555 - 0142", "512 ---- 555 ---- 0142"). The customer-side extractor accepts any number of separators, so redaction must be at least as generous.
+const DIGIT_RUN_RE = /\+?\p{Nd}(?:[^\p{L}\p{N}]*\p{Nd}){9,}/gu;
 const EMAIL_RE = /[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+/g;
-export const redact = (s) => (typeof s === "string" ? s.replace(EMAIL_RE, "[hidden]").replace(PHONE_RE, "[hidden]") : s);
+export const redact = (s) => (typeof s === "string" ? s.replace(EMAIL_RE, "[hidden]").replace(PHONE_RE, "[hidden]").replace(DIGIT_RUN_RE, "[hidden]") : s);
 export const maskPhone = (p) => (typeof p === "string" && p.length >= 6 ? `${p.slice(0, 2)}${"•".repeat(p.length - 6)}${p.slice(-4)}`.replace(/^(\+1)(•+)/, "$1$2") : p ? "••••" : p);
 export const maskEmail = (e) => (typeof e === "string" && e.includes("@") ? `${e[0]}•••@${e.split("@")[1]}` : e);
 

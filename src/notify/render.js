@@ -24,9 +24,9 @@ export function renderNotification({ kind, priority, variant = null, channel, bu
   if (priority === "emergency" && variant === "emergency_added") {
     head = `EMERGENCY reported on an existing inquiry (${cats || "reported emergency"})`;
     body = `A customer with an inquiry already on file has now reported a possible emergency. LATCHLINE cannot dispatch anyone and has not confirmed that anyone was helped. ${reachable ? `Contact: ${contactLine}.` : "The customer has not given a way to reach them."} Issue: ${issue}`;
-  } else if (priority === "emergency" && variant === "contact_added") {
-    head = `UPDATE: emergency customer left contact details (${cats || "reported emergency"})`;
-    body = `Earlier alert: a customer reported a possible emergency without contact details. They have now provided them. LATCHLINE cannot dispatch anyone and has not confirmed that anyone was helped. Contact the customer now: ${contactLine}${contactWord ? ` (${contactWord})` : ""}. Issue: ${issue}`;
+  } else if (priority === "emergency" && variant === "contact_added" && reachable) {
+    head = `UPDATE: emergency customer contact details (${cats || "reported emergency"})`;
+    body = `This updates an earlier emergency alert: the customer has now given or changed their contact details. Use the details below, not any in an earlier alert. LATCHLINE cannot dispatch anyone and has not confirmed that anyone was helped. Contact the customer now: ${contactLine}${contactWord ? ` (${contactWord})` : ""}. Issue: ${issue}`;
   } else if (priority === "emergency" && !reachable) {
     head = `EMERGENCY inquiry, NO CONTACT DETAILS (${cats || "reported emergency"})`;
     body = `A customer reported a possible emergency but has NOT given a phone number or email, so you cannot reach them from this message. LATCHLINE cannot dispatch anyone and has not confirmed that anyone was helped. Open the conversation in your dashboard to read what they wrote; you may get a follow-up alert if they send contact details. Issue: ${issue}`;

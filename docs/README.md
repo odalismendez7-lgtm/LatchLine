@@ -6,6 +6,8 @@ These are the permanent project records. Keep them current: **whenever a decisio
 |---|---|
 | `PRODUCT_REQUIREMENTS.md` | Binding product requirements (start here) |
 | `PLANS_AND_PRICING.md` | Subscription tiers, provisional prices, cost-research plan, entitlement design |
+| `AI_BEHAVIOR_REQUIREMENTS.md` | Founder direction for advanced assistant behavior (direction only, not built) |
+| `SECURITY_AUDIT_6d.md` | Independent audit of the emergency partial-lead work: findings, fixes, unresolved risks |
 | `AI_STRATEGY.md` | How the AI is designed to be accurate, safe, and swappable |
 | `AI_MODEL_EVALUATIONS.md` | Record of models tested and decisions |
 | `ARCHITECTURE.md` | System design and principles |

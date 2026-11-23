@@ -1,6 +1,6 @@
 # Known Issues
 
-Last updated: 2026-11-22 (Stage 6c conversation intelligence) · Each issue is confirmed by a test or by reading the code, as noted.
+Last updated: 2026-11-23 (Stage 6d security audit) · Each issue is confirmed by a test or by reading the code, as noted.
 
 ## Open
 
@@ -47,7 +47,12 @@ Last updated: 2026-11-22 (Stage 6c conversation intelligence) · Each issue is c
 | KI-50 | Medium | Emergency leads are never de-duplicated or merged (even same phone, DECISIONS 61). A repeat caller gets a second lead and alert. Deliberate: a missed second emergency is worse than a repeated alert | `src/engine/engine.js` | Review with the founder after real use |
 | KI-51 | Low | Alerts for incomplete emergency leads and for added contact are simulated only; the notification email text was never delivered anywhere real | `src/notify/render.js` | Real provider (KI-36) |
 | KI-52 | Low | Deleting a lead in the dashboard cascades to its conversation, so further messages in that chat get no acknowledgement of the earlier emergency (safety text still shown) | `src/db/dashboard.js` | Decide delete semantics |
-| KI-53 | Low | Real D1 behavior of migration 0005 (`ALTER TABLE ... CHECK`) and the new update batch is verified only on local SQLite/workerd, not hosted D1 (KI-15) | `migrations/0005_notification_variant.sql` | Hosted check when approved |
+| KI-53 | Low | Real hosted D1 behaviour is unverified for migration 0005 and for the compare-and-set update (`UPDATE ... WHERE col IS ?` followed by `INSERT ... WHERE changes() > 0` in one batch). Both were verified only on local SQLite and local workerd/D1 (`tests/workerd.probe.test.mjs`) | `migrations/0005_notification_variant.sql`, `src/db/tenant.js` | Hosted check when approved (KI-15) |
+| KI-54 | Low | Correction alerts are capped at 3 per lead (flood protection). A 4th phone/email change is stored and visible on the dashboard but triggers no new alert | `src/db/notifications.js` | Revisit with the founder's alert-volume policy |
+| KI-55 | Medium | Anonymous alert flooding: each new chat that mentions a hazard creates a lead and an emergency alert to every verified channel. Limits are 30 requests/min per client and 600/min per business, so hundreds per minute are possible; costly once SMS is real. Capping risks dropping a real emergency, so it needs a founder decision (digest, per-business cap, or bot protection) | `src/app.js`, KI-27 | Founder decision |
+| KI-56 | Low | Under truly parallel requests on one conversation the correction-revision counter can collide (an alert is deduplicated, reconcile repairs it later); 8+ simultaneous updates of one lead can return a conservative "not saved" | `src/engine/engine.js`, `src/db/tenant.js` | Real-D1 concurrency test |
+| KI-57 | Low | `human_requested` alerts are not covered by `reconcileMissing`; only first, contact and emergency-upgrade alerts are. After a failed correction that later succeeds the reply is just the next question (no explicit confirmation) | `src/db/notifications.js`, `src/engine/engine.js` | Extend reconcile; reply wording |
+| KI-58 | Low | Viewer masking shows the last 4 phone digits and the email domain by design; viewer search matches name and ZIP only. Redaction removes any 10+ digit run, so long numbers (for example account numbers) are also hidden from viewers | `src/dashboard/authz.js` | Confirm with the founder |
 | KI-48 | Low | The text "(customer did not describe the problem)" is a system placeholder stored when a customer never describes the problem but gives contact details; the dashboard shows that text as the issue. Frustrated customers also have optional questions (name, ZIP, urgency) dropped automatically, so those fields are empty on their leads | `src/engine/engine.js` | Show an explicit "not provided" label in the dashboard |
 | KI-49 | Low | A false-alarm message after an emergency keeps the emergency flag and tells the customer to keep following safety steps; nothing in the product clears the flag automatically (a person at the business must judge it). Repeated hazard mentions get a short reminder instead of the full steps, so the full text appears only once per hazard type per conversation | `src/engine/engine.js` | Review with the safety professional (KI-12) |
 
