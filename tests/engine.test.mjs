@@ -167,9 +167,10 @@ describe("emergencies", () => {
     const d = deps("acme-plumbing");
     let r = await handleMessage(d, { message: "I smell gas in my kitchen" });
     const id = r.conversationId;
-    r = await handleMessage(d, { message: "Pat Lee", conversationId: id });
+    // Stage 6d: in an emergency the phone is asked first, then ZIP, then name
     r = await handleMessage(d, { message: "512-555-0142", conversationId: id });
     r = await handleMessage(d, { message: "62701", conversationId: id });
+    r = await handleMessage(d, { message: "Pat Lee", conversationId: id });
     assert.equal(r.leadStatus, "saved");
     assert.match(r.reply, /can't dispatch anyone/);
     const lead = await A.leads.get((await A.leads.list())[0].id);

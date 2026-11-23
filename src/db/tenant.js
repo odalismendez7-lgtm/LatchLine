@@ -6,7 +6,7 @@
 // composite foreign keys (migrations/0001_init.sql). Two layers, both tested.
 
 import { DbError } from "./errors.js";
-import { nowIso, newId, json, parse, guard } from "./util.js";
+import { nowIso, newId, json, parse, guard, CONTACT_MISSING } from "./util.js";
 import { notificationsRepo } from "./notifications.js";
 import { membersRepo } from "./members.js";
 import { contactVerifyRepo } from "./contactVerify.js";
@@ -57,6 +57,8 @@ export function platformRepo(db) {
 }
 
 // ---------- tenant level ----------
+
+const shapeLead = (r) => ({ ...r, emergency: !!r.emergency, emergency_categories: parse(r.emergency_categories, []), contact_missing: !r.phone && !r.email });
 
 export function forBusiness(db, businessId) {
   if (typeof businessId !== "string" || businessId.length < 2) throw new DbError("unknown_business", "forBusiness needs a business id");
@@ -164,13 +166,61 @@ export function forBusiness(db, businessId) {
     async get(id) {
       return guard(async () => {
         const r = await db.first("SELECT * FROM leads WHERE id = ? AND business_id = ?", [id, B]);
-        return r && { ...r, emergency: !!r.emergency, emergency_categories: parse(r.emergency_categories, []) };
+        return r && shapeLead(r);
+      });
+    },
+    // The one lead of a conversation (UNIQUE(business_id, conversation_id) guarantees at most one).
+    async getByConversation(conversationId) {
+      return guard(async () => {
+        const r = await db.first("SELECT * FROM leads WHERE business_id = ? AND conversation_id = ?", [B, conversationId]);
+        return r && shapeLead(r);
+      });
+    },
+    /**
+     * Safely change a lead the engine already saved (an incomplete emergency lead that gets completed, or an
+     * emergency reported on a lead that already existed). Rules:
+     *  - tenant scoped; unknown/other-business lead => not_found, nothing written;
+     *  - only the listed customer-detail fields can change; status/duplicate_count/ids/created_at never;
+     *  - a field is written only when it differs; no change => no write, no event;
+     *  - the problem text is never blanked; emergency can only be turned ON, categories are only added;
+     *  - one transaction (update + lead_event + audit), then a read-back; mismatch => not_persisted.
+     * Returns { changed: [...fields], contactAdded, emergencyAdded }.
+     */
+    async update(id, patch = {}) {
+      return guard(async () => {
+        const cur = await db.first("SELECT * FROM leads WHERE id = ? AND business_id = ?", [id, B]);
+        if (!cur) throw new DbError("not_found", "lead not found for this business");
+        const sets = [], params = [], changed = [];
+        const setCol = (col, val) => { if (val !== cur[col]) { sets.push(`${col} = ?`); params.push(val); changed.push(col); } };
+        for (const col of ["name", "phone", "email", "zip", "urgency"]) if (col in patch) setCol(col, patch[col] ?? null);
+        if (typeof patch.issueText === "string" && patch.issueText.trim()) setCol("issue_text", patch.issueText);
+        if (typeof patch.summary === "string") setCol("summary", patch.summary);
+        if ("zipInVerifiedArea" in patch) setCol("zip_in_verified_area", patch.zipInVerifiedArea ? "yes" : "unconfirmed");
+        if (patch.emergency) setCol("emergency", 1);
+        if (Array.isArray(patch.emergencyCategories) && patch.emergencyCategories.length) {
+          const before = parse(cur.emergency_categories, []);
+          const merged = [...new Set([...before, ...patch.emergencyCategories])];
+          if (merged.length !== before.length) { sets.push("emergency_categories = ?"); params.push(json(merged)); changed.push("emergency_categories"); }
+        }
+        const had = !!(cur.phone || cur.email);
+        const willPhone = "phone" in patch ? patch.phone ?? null : cur.phone, willEmail = "email" in patch ? patch.email ?? null : cur.email;
+        const result = { changed, contactAdded: !had && !!(willPhone || willEmail), emergencyAdded: !!patch.emergency && !cur.emergency };
+        if (!changed.length) return result;
+        const t = nowIso();
+        await db.batch([
+          { sql: `UPDATE leads SET ${sets.join(", ")}, updated_at = ? WHERE id = ? AND business_id = ?`, params: [...params, t, id, B] },
+          { sql: "INSERT INTO lead_events (id, business_id, lead_id, type, detail, created_at) VALUES (?,?,?,?,?,?)", params: [newId("evt"), B, id, "updated", json({ fields: changed }), t] },
+          audit("lead_updated", id, { fields: changed }),
+        ]);
+        const back = await db.first("SELECT phone, email, emergency FROM leads WHERE id = ? AND business_id = ?", [id, B]);
+        if (!back || back.phone !== willPhone || back.email !== willEmail) throw new DbError("not_persisted", "lead readback did not match what was written");
+        return result;
       });
     },
     async list({ limit = 50 } = {}) {
-      return guard(async () => db.all(
-        "SELECT id, name, phone, email, zip, issue_category, urgency, emergency, status, duplicate_count, created_at FROM leads WHERE business_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?",
-        [B, Math.min(Math.max(1, limit | 0), 200)]));
+      return guard(async () => (await db.all(
+        `SELECT id, name, phone, email, zip, issue_category, urgency, emergency, status, duplicate_count, created_at, ${CONTACT_MISSING} FROM leads WHERE business_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?`,
+        [B, Math.min(Math.max(1, limit | 0), 200)])).map((r) => ({ ...r, contact_missing: !!r.contact_missing })));
     },
     async count() {
       return guard(async () => (await db.first("SELECT COUNT(*) AS n FROM leads WHERE business_id = ?", [B])).n);

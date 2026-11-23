@@ -29,6 +29,7 @@ import { normalizeMessage, sanitizeText, MAX_ISSUE_CHARS } from "../validation/n
 import { extractContact, extractName, extractUrgency, isMostlyContactData } from "./extract.js";
 import { guardAiReply } from "./guard.js";
 import { forBusiness } from "../db/tenant.js";
+import { VARIANTS } from "../db/notifications.js";
 import { wantsHuman } from "./handoff.js";
 import { analyze, fingerprint } from "./signals.js";
 import { pick, PROMPTS, RETRY, WHY, SAY } from "./phrases.js";
@@ -51,6 +52,9 @@ const TEXT = {
 };
 
 const ORDER = ["issue", "name", "phone", "zip", "urgency"];
+// In an emergency the way to reach the customer comes first (their name is the last thing that matters).
+const EMERGENCY_ORDER = ["issue", "phone", "zip", "name", "urgency"];
+const orderFor = (state) => (state.emergency ? EMERGENCY_ORDER : ORDER);
 // How many times one question may be asked before the engine stops asking (so it can never loop).
 const MAX_ASKS = { issue: 3, name: 3, phone: 4, zip: 3, urgency: 3 };
 const NO_ISSUE_TEXT = "(customer did not describe the problem)";
@@ -59,7 +63,7 @@ const DONE_INTENT = /\b(?:that'?s (?:all|it)|that is (?:all|it)|just (?:send|pas
 
 const initialState = () => ({
   stage: "collecting", slots: {}, awaiting: null, emergency: null, history: [], handoff: false, leadId: null, pendingNotifications: [],
-  asked: {}, settled: {}, used: {}, recent: [], frustration: 0, offeredHandoff: false, pendingOffer: null,
+  asked: {}, settled: {}, used: {}, recent: [], leadSnap: null, partialFailNoted: false, alerted: false, contactNotified: false, handoffQueued: false, partialNoted: false, frustration: 0, offeredHandoff: false, pendingOffer: null,
   lastReplyFp: "", lastUserFp: "", userRepeats: 0, turns: 0, contactStuck: false, nearLimitSaid: false,
 });
 
@@ -91,7 +95,7 @@ function sanitizeState(raw) {
     awaiting: ORDER.includes(s.awaiting) ? s.awaiting : null,
     handoff: !!s.handoff,
     history: Array.isArray(s.history) ? s.history.filter((h) => h && typeof h.content === "string" && (h.role === "user" || h.role === "assistant")).slice(-HISTORY_TURNS * 2) : [],
-    pendingNotifications: Array.isArray(s.pendingNotifications) ? s.pendingNotifications.filter((p) => p && typeof p.kind === "string").slice(0, 10) : [],
+    pendingNotifications: Array.isArray(s.pendingNotifications) ? s.pendingNotifications.filter((p) => p && typeof p.kind === "string").map((p) => ({ kind: p.kind, priority: p.priority, variant: VARIANTS.includes(p.variant) ? p.variant : null })).slice(0, 10) : [],
     asked: numMap(s.asked), settled: strMap(s.settled), used: numMap(s.used),
     recent: Array.isArray(s.recent) ? s.recent.filter((r) => r && typeof r.fp === "string" && Number.isInteger(r.n)).slice(-8) : [],
     frustration: Number.isInteger(s.frustration) ? Math.max(0, Math.min(s.frustration, 10)) : 0,
@@ -102,12 +106,15 @@ function sanitizeState(raw) {
     userRepeats: Number.isInteger(s.userRepeats) ? Math.min(s.userRepeats, 100) : 0,
     turns: Number.isInteger(s.turns) ? Math.min(s.turns, 10000) : 0,
     contactStuck: !!s.contactStuck, nearLimitSaid: !!s.nearLimitSaid,
+    leadSnap: s.leadSnap && typeof s.leadSnap === "object" && !Array.isArray(s.leadSnap)
+      ? Object.fromEntries(["name", "phone", "email", "zip", "urgency", "issue"].map((k) => [k, typeof s.leadSnap[k] === "string" ? s.leadSnap[k].slice(0, 1200) : null])) : null,
+    alerted: !!s.alerted, contactNotified: !!s.contactNotified, handoffQueued: !!s.handoffQueued, partialNoted: !!s.partialNoted,
   };
 }
 
 const hasContact = (slots) => !!(slots.phone || slots.email);
 const isFilled = (slots, k) => (k === "phone" ? hasContact(slots) : !!slots[k]);
-const neededSlots = (state) => ORDER.filter((k) => !isFilled(state.slots, k) && !state.settled[k]);
+const neededSlots = (state) => orderFor(state).filter((k) => !isFilled(state.slots, k) && !state.settled[k]);
 
 function systemPrompt(grounding) {
   return [
@@ -237,21 +244,68 @@ export async function handleMessage(deps, input) {
     if (!state.pendingNotifications.length || !state.leadId) return;
     const still = [];
     for (const p of state.pendingNotifications) {
-      try { await tenant.notifications.enqueueForLead({ leadId: state.leadId, conversationId: conv.id, kind: p.kind, priority: p.priority }); }
+      try { await tenant.notifications.enqueueForLead({ leadId: state.leadId, conversationId: conv.id, kind: p.kind, priority: p.priority, variant: p.variant ?? null }); }
       catch { still.push(p); }
     }
     state.pendingNotifications = still;
   };
   let queuedNow = 0;
-  const queue = async (kind) => {
-    try { await tenant.notifications.enqueueForLead({ leadId: state.leadId, conversationId: conv.id, kind, priority: priority() }); queuedNow += 1; return true; }
+  const queue = async (kind, variant = null) => {
+    try { await tenant.notifications.enqueueForLead({ leadId: state.leadId, conversationId: conv.id, kind, priority: priority(), variant }); queuedNow += 1; return true; }
     catch {
-      state.pendingNotifications = [...state.pendingNotifications.filter((p) => p.kind !== kind), { kind, priority: priority() }];
+      state.pendingNotifications = [...state.pendingNotifications.filter((p) => !(p.kind === kind && (p.variant ?? null) === variant)), { kind, priority: priority(), variant }];
       degraded.notifications = true;
       return false;
     }
   };
   await flushPending();
+
+  // ---- emergency lead persistence (KI-23/KI-47) ----
+  // As soon as a hazard has been reported and we hold the customer's own words, an INCOMPLETE lead is saved (no
+  // phone/email needed); later turns update the same row. Nothing is invented: only what the customer typed is stored.
+  // Returns { created, failed, contactAdded }. Safe to call on every turn and to retry: one lead per conversation
+  // (database-enforced), notifications are idempotent, and a failure is retried on the next message.
+  const syncEmergencyLead = async () => {
+    const out = { created: false, failed: false, contactAdded: false };
+    const sl = state.slots;
+    if (!state.emergency || (!sl.issue && !hasContact(sl))) return out;
+    const record = leadRecord(state, kb);
+    try {
+      if (!state.leadId) {
+        let existing = null;
+        try { existing = await tenant.leads.getByConversation(conv.id); } catch { /* handled below */ }
+        if (!existing) {
+          try { const r = await tenant.leads.create(conv.id, record); state.leadId = r.id; out.created = true; }
+          catch { existing = await tenant.leads.getByConversation(conv.id); } // a parallel request may have won the race
+        }
+        if (existing) {
+          state.leadId = existing.id;
+          state.leadSnap = { name: existing.name, phone: existing.phone, email: existing.email, zip: existing.zip, urgency: existing.urgency, issue: existing.issue_text };
+        }
+        if (!state.leadId) throw new Error("not saved");
+        if (out.created) state.leadSnap = snapOf(sl);
+        state.leadStatus = hasContact(sl) ? "saved" : "partial";
+      }
+      const snap = state.leadSnap ?? snapOf({});
+      const patch = { emergency: true, emergencyCategories: state.emergency.categories, summary: record.summary, zipInVerifiedArea: record.zipInVerifiedArea };
+      for (const k of ["name", "phone", "email", "zip", "urgency"]) if ((sl[k] ?? null) !== (snap[k] ?? null)) patch[k] = sl[k] ?? null;
+      if (sl.issue && sl.issue !== snap.issue) patch.issueText = sl.issue;
+      const u = await tenant.leads.update(state.leadId, patch);
+      state.leadSnap = snapOf(sl);
+      state.leadStatus = hasContact(sl) ? "saved" : "partial";
+      out.contactAdded = u.contactAdded;
+      state.partialNoted = state.partialNoted || false;
+    } catch {
+      out.failed = true;
+      degraded.database = true;
+      return out;
+    }
+    // alerts: the first one as soon as the lead exists; one follow-up when contact details arrive (idempotent keys)
+    if (!state.alerted) { if (await queue("new_lead")) state.alerted = true; if (hasContact(sl)) state.contactNotified = true; }
+    else if (hasContact(sl) && !state.contactNotified && (await queue("new_lead", "contact_added"))) state.contactNotified = true;
+    if (state.handoff && !state.handoffQueued && (await queue("human_requested"))) state.handoffQueued = true;
+    return out;
+  };
 
   // Offer a person once; the customer answers yes/no. Never offers twice, never promises a callback.
   const offerPerson = () => {
@@ -376,7 +430,7 @@ export async function handleMessage(deps, input) {
     if (aw === "phone" && !hasContact(state.slots) && !found.phone && !found.email) {
       if ((sig.skip || sig.no) && !sideTurn) {
         state.settled.phone = "declined"; state.contactStuck = true; consumed = true;
-        notes.push(`${SAY.noContactCannotRecord} ${contactAdvice(kb)}`);
+        notes.push(`${state.leadId ? SAY.noContactPartial : SAY.noContactCannotRecord} ${contactAdvice(kb)}`);
       } else { retried = retried ?? "phone"; attempt = !sideTurn; }
     }
     if (aw === "zip" && !state.slots.zip && !found.zip) {
@@ -400,7 +454,7 @@ export async function handleMessage(deps, input) {
       const notDescription = nameIntro || INSTRUCTION_LIKE.test(message) || sig.smalltalkOnly || sig.noise || sig.confusion || sig.identity || sig.summaryAsk || (sig.angry && sig.wordCount <= 8) || sig.abandon || sig.reset || sig.actionAsk || sig.dontKnow && sig.wordCount <= 3 || sig.skip && sig.wordCount <= 4;
       const firstFreeText = !asksForHuman && !state.awaiting && !kbHit && !contactOnly && !sig.question && !notDescription && sig.wordCount >= 3;
       const answersIssue = state.awaiting === "issue" && !contactOnly && !sig.question && !asksForHuman && !notDescription && !(kbHit && sig.wordCount <= 6);
-      if (answersIssue || (safety.emergency && !sig.actionAsk) || firstFreeText) {
+      if (answersIssue || safety.emergency || firstFreeText) {
         state.slots.issue = sanitizeText(message, { maxLength: MAX_ISSUE_CHARS });
         consumed = true;
         delete state.settled.issue;
@@ -418,7 +472,7 @@ export async function handleMessage(deps, input) {
       if (state.asked[retried] >= MAX_ASKS[retried]) {
         if (retried === "name" || retried === "zip" || retried === "urgency") { state.settled[retried] = "gave_up"; notes.push(pick(state, "skipped", SAY.skipped)); }
         else if (retried === "issue") { state.settled.issue = "gave_up"; state.slots.issue = NO_ISSUE_TEXT; stuckNote = SAY.stuckIssue; }
-        else if (retried === "phone") { state.settled.phone = "gave_up"; state.contactStuck = true; stuckNote = `${SAY.stuckContact} ${contactAdvice(kb)}`; }
+        else if (retried === "phone") { state.settled.phone = "gave_up"; state.contactStuck = true; stuckNote = `${state.leadId ? SAY.noContactPartial : SAY.stuckContact} ${contactAdvice(kb)}`; }
         retried = null;
       }
     }
@@ -448,9 +502,12 @@ export async function handleMessage(deps, input) {
       frustrationNote();
       if (sig.abandon && !wrapUp && !sig.thanks) {
         // "never mind": nothing is recorded, and we stop asking until they come back
-        notes.push(SAY.abandonOpen);
+        notes.push(state.leadId ? SAY.abandonPartial : SAY.abandonOpen);
         state.awaiting = null; handledBody = true; consumed = true;
         parts.push(...notes.filter(Boolean)); return await finish(parts.join("\n\n")); // never save in the same turn as "nothing was recorded"
+      } else if (sig.reset && state.leadId) {
+        // an emergency lead is already saved: never pretend it can be undone, and never wipe what it holds
+        notes.push(SAY.resetPartial); handledBody = true; consumed = true;
       } else if (sig.reset) {
         state.slots = {}; state.asked = {}; state.settled = {}; state.awaiting = null; state.contactStuck = false;
         if (state.emergency) state.slots.urgency = "now";
@@ -499,12 +556,20 @@ export async function handleMessage(deps, input) {
     }
 
     // ---- 6. save when complete ----
-    if (sig.reset && !safety.emergency) retried = null;
+    if (sig.reset && !safety.emergency && !state.leadId) retried = null;
     if (forceNext) retried = null;
     if (retried && state.settled[retried]) retried = null;
+    const sync = state.emergency ? await syncEmergencyLead() : { created: false, failed: false };
+    if (sync.created && !hasContact(state.slots) && !state.partialNoted) { state.partialNoted = true; parts.push(SAY.partialRecorded); }
+    else if (sync.failed && !state.partialFailNoted) { state.partialFailNoted = true; parts.push(`${SAY.partialNotSaved} ${contactAdvice(kb)}`.trim()); }
+    if (!sync.failed) state.partialFailNoted = false;
     const missing = neededSlots(state);
     const canSave = missing.length === 0 && hasContact(state.slots) && !!state.slots.issue;
-    if (canSave) {
+    if (canSave && state.leadId && state.emergency) {
+      // the incomplete emergency lead already exists and was just brought up to date: it is now complete
+      if (sync.failed) { state.leadStatus = "not_saved"; parts.push(`${TEXT.notSaved} ${contactAdvice(kb)}`.trim()); }
+      else { state.stage = "done"; state.awaiting = null; state.leadStatus = "saved"; parts.push(TEXT.recordedEmergency); if (state.handoff) parts.push("Your request to speak with a person is included, but I can't promise when anyone will respond."); }
+    } else if (canSave) {
       const saved = await saveLead({ tenant, conv, state, kb });
       if (saved.ok) {
         state.stage = "done";
@@ -523,12 +588,12 @@ export async function handleMessage(deps, input) {
     } else if (missing.length === 0 && !hasContact(state.slots)) {
       // everything else is settled but there is no way to reach the customer: say so once, do not loop
       state.awaiting = null;
-      if (!stuckNote && !state.contactStuck) { state.contactStuck = true; parts.push(`${SAY.noContactCannotRecord} ${contactAdvice(kb)}`); }
+      if (!stuckNote && !state.contactStuck) { state.contactStuck = true; parts.push(`${state.leadId ? SAY.noContactPartial : SAY.noContactCannotRecord} ${contactAdvice(kb)}`); }
     } else if (missing.length === 0) {
       state.awaiting = null; // no description yet: wait for the customer, do not loop
     } else if (!(sig.abandon && !wrapUp && !sig.thanks)) {
       const pendingOfferNow = state.pendingOffer === "handoff" && notes.some((n) => n === SAY.offerPerson || String(n).endsWith(SAY.offerPerson));
-      const next = forceNext && missing.includes(forceNext) ? forceNext : sig.reset ? missing[0] : retried ?? (aw && missing.includes(aw) && sideTurn ? aw : missing[0]);
+      const next = forceNext && missing.includes(forceNext) ? forceNext : sig.reset && !state.leadId ? missing[0] : retried ?? (aw && missing.includes(aw) && sideTurn ? aw : missing[0]);
       if (state.contactStuck && next === "phone") state.awaiting = null; // never re-ask what they declined or could not give
       else if (!pendingOfferNow) {
         if (next !== aw && !retried) state.asked[next] = (state.asked[next] ?? 0) + 1;
@@ -545,8 +610,22 @@ export async function handleMessage(deps, input) {
     let answeredPerson = false;
     if (state.pendingOffer === "handoff" && !asksForHuman && sig.yes) { state.pendingOffer = null; state.handoff = true; answeredPerson = true; }
     else if (state.pendingOffer === "handoff" && sig.no) { state.pendingOffer = null; parts.push(SAY.offerDeclined); answeredPerson = true; }
-    else if (state.pendingOffer === "handoff" && !sig.question) state.pendingOffer = null;
-
+    if (safety.emergency && state.leadStatus === "recorded_existing") {
+      // This chat's request was merged into ANOTHER conversation's lead. The emergency gets its OWN lead (and alert);
+      // the earlier lead is not touched.
+      Object.assign(state, { leadId: null, leadSnap: null, alerted: false, contactNotified: false, handoffQueued: false, leadStatus: undefined });
+      state.slots.issue = sanitizeText(message, { maxLength: MAX_ISSUE_CHARS });
+      const sy = await syncEmergencyLead();
+      if (sy.failed) parts.push(`${SAY.partialNotSaved} ${contactAdvice(kb)}`.trim());
+      else parts.push(TEXT.recordedEmergency);
+      answeredPerson = true;
+    } else if (safety.emergency && state.leadId) {
+      // an emergency reported AFTER the request was recorded: mark that lead as an emergency and alert once
+      try {
+        const u = await tenant.leads.update(state.leadId, { emergency: true, emergencyCategories: state.emergency.categories, issueText: sanitizeText(`${state.slots.issue ?? ""} | Emergency reported: ${message}`, { maxLength: MAX_ISSUE_CHARS }) });
+        if (u.emergencyAdded) await queue("new_lead", "emergency_added");
+      } catch { degraded.database = true; }
+    }
     if (asksForHuman || (answeredPerson && state.handoff)) {
       parts.push((await queue("human_requested")) ? TEXT.handoffRecorded : `${TEXT.handoffNotSaved} ${contactAdvice(kb)}`.trim());
     } else if (!safety.emergency && !answeredPerson) {
@@ -600,6 +679,24 @@ function contactAdvice(kb) {
     if (phone) return `Please call the business directly at ${phone}, or try again in a few minutes.`;
   } catch { /* fall through */ }
   return SAY.noContactAdviceGeneric;
+}
+
+const snapOf = (s) => ({ name: s.name ?? null, phone: s.phone ?? null, email: s.email ?? null, zip: s.zip ?? null, urgency: s.urgency ?? null, issue: s.issue ?? null });
+
+/** The lead row for the current conversation state. Missing details stay null: nothing is invented to fill a gap. */
+function leadRecord(state, kb) {
+  const s = state.slots;
+  let zipIn = false;
+  try { zipIn = !!s.zip && !!kb?.grounding?.().facts?.service_area_zips?.includes(s.zip); } catch { zipIn = false; }
+  const who = [s.name, s.phone ? `(${s.phone})` : s.email ? `(${s.email})` : null, s.zip].filter(Boolean).join(" ");
+  return {
+    name: s.name ?? null, phone: s.phone ?? null, email: s.email ?? null, zip: s.zip ?? null,
+    issueCategory: state.emergency?.categories?.[0] ?? null,
+    issueText: s.issue ?? null, urgency: s.urgency ?? null, preferredContact: null, preferredTime: null,
+    emergency: !!state.emergency, emergencyCategories: state.emergency?.categories ?? [],
+    zipInVerifiedArea: zipIn,
+    summary: `${who ? `${who}: ` : ""}${String(s.issue ?? "").slice(0, 200)}`,
+  };
 }
 
 async function saveLead({ tenant, conv, state, kb }) {

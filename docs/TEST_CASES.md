@@ -26,6 +26,19 @@ Rule: nothing is called production-ready unless the required checks below have p
 
 ## Result log
 
+### 2026-11-22: Stage 6d emergency partial-lead persistence (KI-23/KI-47)
+
+Result: full suite 991 tests, 991 pass, 0 fail (926 before + 65 new in `tests/emergency.partial.test.mjs`; some existing assertions changed deliberately, see below). Covered: abandoned emergency after the safety message (lead + one alert, no contact, nothing invented); incomplete contact (phone only, email only, declined, junk); duplicate and retried messages and parallel requests (one lead, one alert, idempotency keys); tenant isolation (other business cannot read or update the lead); database failure at create/update (customer told NOT saved, safety text still shown, recovery on a later message with no duplicate); notification/outbox failure (lead kept, alert retried, reply never claims notification); later completion (phone/email/ZIP/name update the same lead, one `contact_added` alert); emergency after an ordinary recorded request; emergency after a merged request; reset / never-mind / declined-contact with an existing lead; dashboard filter and counts; alert rendering without contact; seeded random runs with invariants.
+
+Bugs found by the tests and an independent fresh-eyes review, each fixed and kept as a regression test: contradictory "nothing has been recorded" after reset / never mind / declined contact when an emergency lead already existed; reset leaving stale lead state so the next emergency message erased the saved phone; an emergency after a merged request modifying another conversation's lead; emergency text not stored when upgrading an ordinary lead; sewage emergencies mislabelled in alerts; my own patch deleting the yes/no handoff answer after a request was recorded (caught by an existing test).
+
+Deliberate changes to existing tests: emergency question order is now issue, phone, ZIP, name; emergency chats send an extra early alert; migration count is 5 in db/probe/notify tests.
+
+Limits of this run (what it does NOT show):
+- Mock notifier and in-memory SQLite only. No real email/SMS delivery, no real D1, no hosted runtime.
+- Conversations are scripted/generated; no real customers, no real model (KI-46). Wording not reviewed by a professional (KI-12).
+- Not evidence of production readiness. It is not production-ready.
+
 ### 2026-11-22: Stage 6c conversation intelligence (deterministic dialogue layer, mock AI only)
 
 Result: full suite 926 tests, 926 pass, 0 fail (790 before this stage + 136 new). New files: `tests/conversation.signals.test.mjs` (signal detectors incl. false-positive lists, odd input, regex speed), `tests/conversation.test.mjs` (scripted transcripts through the real engine and an in-memory database: memory, corrections, repetition, frustration/handoff, stuck recovery, minimal collection, honesty, emergencies, failure recovery, tenant isolation, review regressions), `tests/conversation.property.test.mjs` (guard table, knowledge policy answers, partial leads downstream, 10 seeded random 60-turn runs over two businesses with invariants), `tests/helpers/convo.mjs`.
@@ -40,7 +53,7 @@ Limits of this run (what it does NOT show):
 - No real language model was used; the mock AI only. Nothing here shows how a real model would answer behind the guards (KI-46).
 - All conversations are ones we wrote or generated from a fixed list of messages. No real customer transcripts. English only outside the emergency layer.
 - The seeded runs are a bounded search, not a proof. Phrasing we did not think of can still be misread.
-- Emergency wording was not reviewed by a licensed professional (KI-12). Emergency chats without contact details still create no lead (KI-23/KI-47).
+- Emergency wording was not reviewed by a licensed professional (KI-12). (Superseded for contact-less emergencies by Stage 6d below.)
 - This is not evidence the product or the AI is production-ready. It is not.
 
 ### 2026-11-21: Stage 6 runtime validation (real local Cloudflare runtime)

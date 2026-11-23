@@ -111,6 +111,7 @@ async function render() {
 }
 const chip = (t, cls) => h("span", { class: "chip " + (cls || "") }, t);
 const urgentChip = (u) => (u ? chip("URGENT", "urgent") : null);
+const incompleteChip = (l) => (l.contact_missing ? chip("INCOMPLETE: no phone or email", "incomplete") : null);
 function empty(t) { return h("p", { class: "empty" }, t); }
 function tbl(cols, rows) {
   return h("div", { class: "scroll" }, h("table", null, h("thead", null, h("tr", null, cols.map((c) => h("th", { scope: "col" }, c)))), h("tbody", null, rows)));
@@ -120,23 +121,23 @@ async function vOverview() {
   const r = await api("GET", B("/overview")); const o = r.data.overview || {};
   const card = (label, n, cls, go) => h("button", { class: "stat " + (cls || ""), onclick: go }, h("span", { class: "num" }, String(n ?? 0)), h("span", null, label));
   return h("section", null, h("h2", null, "Overview"),
-    h("div", { class: "stats" }, card("New leads", o.leadsNew, "", () => { S.view = "leads"; S.filter = { status: "new" }; render(); }), card("Urgent, not yet handled", o.urgentOpen, o.urgentOpen ? "urgent" : "", () => { S.view = "leads"; S.filter = { urgent: "1" }; render(); }), card("Waiting for a human", o.handoffsOpen, "", () => { S.view = "handoffs"; render(); }), card("All leads", o.leadsTotal, "", () => { S.view = "leads"; S.filter = {}; render(); }), card("Conversations", o.conversationsTotal, "", () => { S.view = "conversations"; render(); })),
+    h("div", { class: "stats" }, card("New leads", o.leadsNew, "", () => { S.view = "leads"; S.filter = { status: "new" }; render(); }), card("Urgent, not yet handled", o.urgentOpen, o.urgentOpen ? "urgent" : "", () => { S.view = "leads"; S.filter = { urgent: "1" }; render(); }), card("Emergencies with no contact details", o.incompleteEmergency, o.incompleteEmergency ? "urgent" : "", () => { S.view = "leads"; S.filter = { urgent: "1", incomplete: "1" }; render(); }), card("Waiting for a human", o.handoffsOpen, "", () => { S.view = "handoffs"; render(); }), card("All leads", o.leadsTotal, "", () => { S.view = "leads"; S.filter = {}; render(); }), card("Conversations", o.conversationsTotal, "", () => { S.view = "conversations"; render(); })),
     r.data.notificationsNeedingAttention ? h("p", { class: "alert" }, r.data.notificationsNeedingAttention + " notification(s) need attention — the business may NOT have been told about them. ", h("a", { href: "#", onclick: (e) => { e.preventDefault(); S.view = "notifications"; render(); } }, "Review")) : null,
     h("p", { class: "muted" }, "Notifications in this build are SIMULATED (mock provider). No real email or text is sent."));
 }
 
 async function vLeads() {
   const f = S.filter || {};
-  const q = new URLSearchParams(); for (const k of ["status", "urgent", "q"]) if (f[k]) q.set(k, f[k]); q.set("limit", "50");
+  const q = new URLSearchParams(); for (const k of ["status", "urgent", "incomplete", "q"]) if (f[k]) q.set(k, f[k]); q.set("limit", "50");
   if (S.openLead) return leadDetail(S.openLead);
   const r = await api("GET", B("/leads?" + q));
-  const form = h("form", { class: "filters", onsubmit: (e) => { e.preventDefault(); const v = vals(e.target); S.filter = { status: v.status, q: v.q, urgent: v.urgent ? "1" : "" }; render(); } },
+  const form = h("form", { class: "filters", onsubmit: (e) => { e.preventDefault(); const v = vals(e.target); S.filter = { status: v.status, q: v.q, urgent: v.urgent ? "1" : "", incomplete: v.incomplete ? "1" : "" }; render(); } },
     h("label", null, "Status", h("select", { name: "status" }, [["", "All"], ["new", "New"], ["contacted", "Contacted"], ["won", "Won"], ["lost", "Lost"], ["spam", "Spam"]].map((o) => h("option", { value: o[0], selected: (f.status || "") === o[0] }, o[1])))),
     h("label", null, "Search", h("input", { name: "q", value: f.q || "", maxlength: 60, placeholder: "name, issue, ZIP" })),
-    h("label", { class: "inline" }, h("input", { type: "checkbox", name: "urgent", value: "1", checked: f.urgent === "1" }), " Urgent only"), h("button", { class: "btn", type: "submit" }, "Filter"));
+    h("label", { class: "inline" }, h("input", { type: "checkbox", name: "urgent", value: "1", checked: f.urgent === "1" }), " Urgent only"), h("label", { class: "inline" }, h("input", { type: "checkbox", name: "incomplete", value: "1", checked: f.incomplete === "1" }), " No contact details only"), h("button", { class: "btn", type: "submit" }, "Filter"));
   const rows = (r.data.leads || []).map((l) => h("tr", { class: l.emergency ? "row-urgent" : "" },
-    h("td", null, urgentChip(l.emergency), " ", h("button", { class: "link", onclick: () => { S.openLead = l.id; render(); } }, l.name || "(no name)")),
-    h("td", null, l.phone || ""), h("td", null, l.issue_text || l.issue_category || ""), h("td", null, chip(l.status, "s-" + l.status)), h("td", null, fmt(l.created_at))));
+    h("td", null, urgentChip(l.emergency), " ", incompleteChip(l), " ", h("button", { class: "link", onclick: () => { S.openLead = l.id; render(); } }, l.name || "(no name)")),
+    h("td", null, l.phone || (l.contact_missing ? "— none given —" : "")), h("td", null, l.issue_text || l.issue_category || ""), h("td", null, chip(l.status, "s-" + l.status)), h("td", null, fmt(l.created_at))));
   return h("section", null, h("h2", null, "Leads"), form, rows.length ? tbl(["Name", "Phone", "Issue", "Status", "Received"], rows) : empty("No leads match."),
     can("leads.export") ? h("p", null, h("button", { class: "btn", onclick: exportCsv }, "Export CSV")) : null);
 }
@@ -152,7 +153,8 @@ async function leadDetail(id) {
   const row = (k, v) => h("div", { class: "kv" }, h("dt", null, k), h("dd", null, v == null || v === "" ? "—" : String(v)));
   const status = can("leads.update_status") ? h("form", { class: "inline-form", onsubmit: async (e) => { e.preventDefault(); const x = await api("PATCH", B("/leads/" + encodeURIComponent(id)), { status: vals(e.target).status }); if (x.ok) { toast("Status updated."); render(); } else toast(say(x), true); } },
     h("select", { name: "status", "aria-label": "Status" }, ["new", "contacted", "won", "lost", "spam"].map((s) => h("option", { value: s, selected: s === l.status }, s))), h("button", { class: "btn primary", type: "submit" }, "Update status")) : chip(l.status);
-  return h("section", null, h("button", { class: "link", onclick: () => { S.openLead = null; render(); } }, "← All leads"), h("h2", null, urgentChip(l.emergency), " ", l.name || "(no name)"),
+  return h("section", null, h("button", { class: "link", onclick: () => { S.openLead = null; render(); } }, "← All leads"), h("h2", null, urgentChip(l.emergency), " ", incompleteChip(l), " ", l.name || "(no name)"),
+    l.contact_missing ? h("p", { class: "alert" }, "Incomplete lead: the customer has not given a phone number or email, so you cannot reach them from this record. Read the conversation for what they wrote. If they send details later, this lead updates and you get a follow-up alert.") : null,
     l.contactMasked ? h("p", { class: "muted" }, "Phone and email are hidden for your role.") : null, status,
     h("dl", { class: "grid" }, row("Phone", l.phone), row("Email", l.email), row("ZIP", l.zip), row("ZIP in verified service area", l.zip_in_verified_area), row("Issue", l.issue_text), row("Category", l.issue_category), row("Urgency", l.urgency), row("Preferred contact", l.preferred_contact), row("Preferred time", l.preferred_time), row("Summary", l.summary), row("Repeat contacts", l.duplicate_count), row("Received", fmt(l.created_at))),
     h("p", null, h("button", { class: "btn", onclick: () => { S.view = "conversations"; S.openConv = l.conversation_id; S.openLead = null; render(); } }, "View conversation")),

@@ -111,15 +111,16 @@ describe("emergency escalation", () => {
     const d = w.deps("acme-plumbing");
     let r = await handleMessage(d, { message: "I smell gas in my kitchen" });
     const id = r.conversationId;
-    for (const msg of ["Pat Lee", "512-555-0177", "62701"]) r = await handleMessage(d, { message: msg, conversationId: id });
+    for (const msg of ["512-555-0177", "62701", "Pat Lee"]) r = await handleMessage(d, { message: msg, conversationId: id });
     assert.equal(r.leadStatus, "saved");
     const emergencyLead = (await w.A.leads.list()).find((l) => l.emergency)?.id;
     const rows = await notes(w.A, emergencyLead);
-    assert.deepEqual(rows.map((x) => [x.priority, x.channel]).sort(), [["emergency", "email"], ["emergency", "sms"]]);
+    // Stage 6d: the first alert is queued when the emergency is reported; one follow-up when contact details arrive
+    assert.deepEqual(rows.map((x) => [x.priority, x.channel]).sort(), [["emergency", "email"], ["emergency", "email"], ["emergency", "sms"], ["emergency", "sms"]]);
     const { dispatchDue } = await import("../src/notify/dispatcher.js");
     await dispatchDue({ db: w.db, channels: createChannelMap([m]) });
     assert.equal(m.outbox[0].priority, "emergency");
-    assert.equal(m.outbox.filter((x) => x.priority === "emergency").length, 2);
+    assert.equal(m.outbox.filter((x) => x.priority === "emergency").length, 4);
     const em = m.outbox.find((x) => x.channel === "email" && x.priority === "emergency");
     assert.match(em.subject, /EMERGENCY.*gas smell/);
     assert.match(em.text, /Pat Lee/);
@@ -130,7 +131,7 @@ describe("emergency escalation", () => {
     const d = w.deps("acme-plumbing");
     let r = await handleMessage(d, { message: "I smell gas in my kitchen" });
     const id = r.conversationId;
-    for (const msg of ["Pat Lee", "512-555-0177", "62701"]) r = await handleMessage(d, { message: msg, conversationId: id });
+    for (const msg of ["512-555-0177", "62701", "Pat Lee"]) r = await handleMessage(d, { message: msg, conversationId: id });
     assert.match(r.reply, /can't dispatch anyone/);
     assert.doesNotMatch(r.reply, /notified|alerted|emailed|texted|on (its|their) way|help is coming/i);
   });
@@ -139,9 +140,9 @@ describe("emergency escalation", () => {
     const d = w.deps("acme-plumbing");
     let r = await handleMessage(d, { message: "I smell gas in my kitchen" });
     const id = r.conversationId;
-    for (const msg of ["Pat Lee", "512-555-0177", "62701"]) r = await handleMessage(d, { message: msg, conversationId: id });
+    for (const msg of ["512-555-0177", "62701", "Pat Lee"]) r = await handleMessage(d, { message: msg, conversationId: id });
     const a = await w.A.notifications.needsAttention();
-    assert.deepEqual(a.map((x) => [x.priority, x.status]), [["emergency", "undeliverable"]]);
+    assert.deepEqual(a.map((x) => [x.priority, x.status]), [["emergency", "undeliverable"], ["emergency", "undeliverable"]]);
     assert.match(describeStatus(a[0]), /NOT been notified/);
   });
   test("emergency notifications survive a provider outage on one channel and keep retrying on the other", async () => {
@@ -151,11 +152,11 @@ describe("emergency escalation", () => {
     const d = w.deps("acme-plumbing");
     let r = await handleMessage(d, { message: "carbon monoxide alarm is going off" });
     const id = r.conversationId;
-    for (const msg of ["Pat Lee", "512-555-0177", "62701"]) r = await handleMessage(d, { message: msg, conversationId: id });
+    for (const msg of ["512-555-0177", "62701", "Pat Lee"]) r = await handleMessage(d, { message: msg, conversationId: id });
     const { dispatchDue } = await import("../src/notify/dispatcher.js");
     await dispatchDue({ db: w.db, channels: createChannelMap([email, sms]) });
     const rows = await notes(w.A, (await w.A.leads.list())[0].id);
-    assert.deepEqual(rows.map((x) => [x.channel, x.status]).sort(), [["email", "sent"], ["sms", "queued"]]);
+    assert.deepEqual(rows.map((x) => [x.channel, x.status]).sort(), [["email", "sent"], ["email", "sent"], ["sms", "queued"], ["sms", "queued"]]);
   });
 });
 

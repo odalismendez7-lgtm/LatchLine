@@ -83,7 +83,7 @@ export async function dispatchDue({ db, channels, now = () => new Date().toISOSt
         if (!real) { await settleFailure("contact_not_verified", false); continue; }
       }
 
-      const msg = renderNotification({ kind: n.kind, priority: n.priority, channel: n.channel, business: profile, lead });
+      const msg = renderNotification({ kind: n.kind, priority: n.priority, variant: n.variant ?? null, channel: n.channel, business: profile, lead });
       let result;
       try {
         result = validateSendResult(await withTimeout(provider.send({ channel: n.channel, to: n.recipient, subject: msg.subject, text: msg.text, idempotencyKey: n.idempotency_key, priority: n.priority }), sendTimeoutMs));

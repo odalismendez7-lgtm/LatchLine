@@ -7,9 +7,9 @@
 const CONTROL = new RegExp("[\\u0000-\\u001f\\u007f-\\u009f\\u2028\\u2029]+", "g");
 const line = (v, max) => String(v ?? "").replace(CONTROL, " ").replace(/\s+/g, " ").trim().slice(0, max);
 
-const CATEGORY_LABELS = { gas_leak: "gas smell", carbon_monoxide: "carbon monoxide", fire_smoke: "fire/smoke", electrical_hazard: "electrical hazard", water_heater_hazard: "water heater hazard", flooding: "flooding", sewage_backup: "sewage backup", life_threat: "possible injury", unspecified_emergency: "unspecified emergency" };
+const CATEGORY_LABELS = { gas_leak: "gas smell", carbon_monoxide: "carbon monoxide", fire_smoke: "fire/smoke", electrical_hazard: "electrical hazard", water_heater_hazard: "water heater hazard", flooding: "flooding", sewage_backup: "sewage backup", sewage: "sewage backup", life_threat: "possible injury", unspecified_emergency: "unspecified emergency" };
 
-export function renderNotification({ kind, priority, channel, business, lead }) {
+export function renderNotification({ kind, priority, variant = null, channel, business, lead }) {
   const name = line(lead.name, 60) || "(no name)";
   const phone = line(lead.phone, 20) || "(no phone)";
   const zip = line(lead.zip, 5) || "(no ZIP)";
@@ -18,8 +18,19 @@ export function renderNotification({ kind, priority, channel, business, lead }) 
   const contactLine = `${name}, ${phone}, ZIP ${zip}`;
   const biz = line(business?.name, 80) || "your business";
 
+  const reachable = !!(lead.phone || lead.email);
+  const contactWord = [lead.phone, lead.email].map((x) => line(x, 80)).filter(Boolean).join(" / ");
   let head, body;
-  if (priority === "emergency") {
+  if (priority === "emergency" && variant === "emergency_added") {
+    head = `EMERGENCY reported on an existing inquiry (${cats || "reported emergency"})`;
+    body = `A customer with an inquiry already on file has now reported a possible emergency. LATCHLINE cannot dispatch anyone and has not confirmed that anyone was helped. ${reachable ? `Contact: ${contactLine}.` : "The customer has not given a way to reach them."} Issue: ${issue}`;
+  } else if (priority === "emergency" && variant === "contact_added") {
+    head = `UPDATE: emergency customer left contact details (${cats || "reported emergency"})`;
+    body = `Earlier alert: a customer reported a possible emergency without contact details. They have now provided them. LATCHLINE cannot dispatch anyone and has not confirmed that anyone was helped. Contact the customer now: ${contactLine}${contactWord ? ` (${contactWord})` : ""}. Issue: ${issue}`;
+  } else if (priority === "emergency" && !reachable) {
+    head = `EMERGENCY inquiry, NO CONTACT DETAILS (${cats || "reported emergency"})`;
+    body = `A customer reported a possible emergency but has NOT given a phone number or email, so you cannot reach them from this message. LATCHLINE cannot dispatch anyone and has not confirmed that anyone was helped. Open the conversation in your dashboard to read what they wrote; you may get a follow-up alert if they send contact details. Issue: ${issue}`;
+  } else if (priority === "emergency") {
     head = `EMERGENCY inquiry (${cats || "reported emergency"})`;
     body = `A customer reported a possible emergency. LATCHLINE cannot dispatch anyone and has not confirmed that anyone was helped. Contact the customer now: ${contactLine}. Issue: ${issue}`;
   } else if (kind === "human_requested") {

@@ -153,13 +153,13 @@ export function createDashboardApi({ db, auth, mailer, now = Date.now, devMode =
       switch (key) {
         case "GET overview": return out({ role, overview: await T.dashboard.overview(), notificationsNeedingAttention: can(role, "notifications.read") ? (await T.notifications.needsAttention({ now: new Date(now()).toISOString() })).length : undefined });
         case "GET leads": {
-          let r; try { r = await T.dashboard.searchLeads({ status: q.get("status"), urgent: q.get("urgent"), q: q.get("q"), limit: q.get("limit") ?? 25, offset: q.get("offset") ?? 0 }); } catch (e) { return e?.code === "invalid_data" ? err(400, "Unknown status") : dbErr(e); }
+          let r; try { r = await T.dashboard.searchLeads({ status: q.get("status"), urgent: q.get("urgent"), incomplete: q.get("incomplete"), q: q.get("q"), limit: q.get("limit") ?? 25, offset: q.get("offset") ?? 0 }); } catch (e) { return e?.code === "invalid_data" ? err(400, "Unknown status") : dbErr(e); }
           return out({ total: r.total, leads: r.rows.map((l) => maskLead(l, role)) });
         }
         case "GET leads/export.csv": {
           const rows = await T.dashboard.exportLeads();
           await T.dashboard.recordExport(actor, rows.length);
-          const cols = ["id", "created_at", "status", "emergency", "name", "phone", "email", "zip", "issue_category", "issue_text", "urgency", "preferred_contact", "preferred_time", "summary"];
+          const cols = ["id", "created_at", "status", "emergency", "name", "phone", "email", "zip", "issue_category", "issue_text", "urgency", "preferred_contact", "preferred_time", "summary", "contact_missing"];
           const csv = [cols.map(csvCell).join(","), ...rows.map((r) => cols.map((c) => csvCell(r[c])).join(","))].join("\r\n");
           return new Response(csv, { status: 200, headers: { ...H, "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": 'attachment; filename="leads.csv"' } });
         }

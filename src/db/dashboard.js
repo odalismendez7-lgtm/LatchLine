@@ -1,7 +1,7 @@
 // Read/write queries behind the business dashboard. Tenant-scoped like everything in forBusiness():
 // every statement binds business_id. Callers authorize the user first (src/dashboard/authz.js).
 import { DbError } from "./errors.js";
-import { nowIso, newId, json, parse, guard } from "./util.js";
+import { nowIso, newId, json, parse, guard, CONTACT_MISSING } from "./util.js";
 
 export const LEAD_STATUSES = ["new", "contacted", "won", "lost", "spam"];
 const like = (q) => `%${String(q).replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
@@ -12,7 +12,7 @@ export function dashboardRepo(db, B) {
     sql: "INSERT INTO audit_log (id, business_id, actor, action, target, detail, created_at) VALUES (?,?,?,?,?,?,?)",
     params: [newId("aud"), B, actor, action, target ?? null, json(detail), nowIso()],
   });
-  const leadCols = "id, name, phone, email, zip, issue_category, issue_text, urgency, preferred_contact, preferred_time, emergency, status, duplicate_count, zip_in_verified_area, summary, created_at, updated_at";
+  const leadCols = `id, name, phone, email, zip, issue_category, issue_text, urgency, preferred_contact, preferred_time, emergency, status, duplicate_count, zip_in_verified_area, summary, created_at, updated_at, ${CONTACT_MISSING}`;
 
   return Object.freeze({
     async overview() {
@@ -22,32 +22,34 @@ export function dashboardRepo(db, B) {
           leadsTotal: await one("SELECT COUNT(*) n FROM leads WHERE business_id = ?"),
           leadsNew: await one("SELECT COUNT(*) n FROM leads WHERE business_id = ? AND status = 'new'"),
           urgentOpen: await one("SELECT COUNT(*) n FROM leads WHERE business_id = ? AND emergency = 1 AND status = 'new'"),
+          incompleteEmergency: await one("SELECT COUNT(*) n FROM leads WHERE business_id = ? AND emergency = 1 AND status = 'new' AND phone IS NULL AND email IS NULL"),
           conversationsTotal: await one("SELECT COUNT(*) n FROM conversations WHERE business_id = ?"),
           handoffsOpen: await one("SELECT COUNT(*) n FROM conversations WHERE business_id = ? AND status = 'needs_human'"),
         };
       });
     },
-    async searchLeads({ status, urgent, q, limit = 25, offset = 0 } = {}) {
+    async searchLeads({ status, urgent, incomplete, q, limit = 25, offset = 0 } = {}) {
       return guard(async () => {
         const where = ["business_id = ?"], p = [B];
         if (status !== undefined && status !== null && status !== "") { if (!LEAD_STATUSES.includes(status)) throw new DbError("invalid_data", "unknown status"); where.push("status = ?"); p.push(status); }
         if (urgent === true || urgent === "1" || urgent === "true") where.push("emergency = 1");
+        if (incomplete === true || incomplete === "1" || incomplete === "true") where.push("phone IS NULL AND email IS NULL");
         if (typeof q === "string" && q.trim()) { const l = like(q.trim().slice(0, 60)); where.push("(name LIKE ? ESCAPE '\\' OR issue_text LIKE ? ESCAPE '\\' OR zip LIKE ? ESCAPE '\\')"); p.push(l, l, l); }
         const lim = clamp(limit, 1, 100, 25), off = clamp(offset, 0, 100000, 0);
         const rows = await db.all(`SELECT ${leadCols} FROM leads WHERE ${where.join(" AND ")} ORDER BY emergency DESC, created_at DESC, rowid DESC LIMIT ? OFFSET ?`, [...p, lim, off]);
         const total = (await db.first(`SELECT COUNT(*) n FROM leads WHERE ${where.join(" AND ")}`, p)).n;
-        return { rows: rows.map((r) => ({ ...r, emergency: !!r.emergency })), total };
+        return { rows: rows.map((r) => ({ ...r, emergency: !!r.emergency, contact_missing: !!r.contact_missing })), total };
       });
     },
     async exportLeads(limit = 5000) {
-      return guard(async () => (await db.all(`SELECT ${leadCols} FROM leads WHERE business_id = ? ORDER BY created_at, rowid LIMIT ?`, [B, clamp(limit, 1, 5000, 5000)])).map((r) => ({ ...r, emergency: !!r.emergency })));
+      return guard(async () => (await db.all(`SELECT ${leadCols} FROM leads WHERE business_id = ? ORDER BY created_at, rowid LIMIT ?`, [B, clamp(limit, 1, 5000, 5000)])).map((r) => ({ ...r, emergency: !!r.emergency, contact_missing: !!r.contact_missing })));
     },
     async leadDetail(id) {
       return guard(async () => {
         const r = await db.first(`SELECT ${leadCols}, conversation_id, emergency_categories FROM leads WHERE id = ? AND business_id = ?`, [id, B]);
         if (!r) return null;
         const events = await db.all("SELECT type, detail, created_at FROM lead_events WHERE business_id = ? AND lead_id = ? ORDER BY created_at, rowid LIMIT 100", [B, id]);
-        return { ...r, emergency: !!r.emergency, emergency_categories: parse(r.emergency_categories, []), events: events.map((e) => ({ type: e.type, detail: parse(e.detail, {}), created_at: e.created_at })) };
+        return { ...r, emergency: !!r.emergency, contact_missing: !!r.contact_missing, emergency_categories: parse(r.emergency_categories, []), events: events.map((e) => ({ type: e.type, detail: parse(e.detail, {}), created_at: e.created_at })) };
       });
     },
     async setLeadStatus(actorId, id, status) {
@@ -115,7 +117,7 @@ export function dashboardRepo(db, B) {
     },
     async notificationHistory(limit = 50) {
       return guard(async () => db.all(
-        `SELECT id, lead_id, kind, priority, channel, status, attempts, last_error, simulated, created_at, sent_at
+        `SELECT id, lead_id, kind, variant, priority, channel, status, attempts, last_error, simulated, created_at, sent_at
            FROM notifications WHERE business_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?`, [B, clamp(limit, 1, 200, 50)]));
     },
   });

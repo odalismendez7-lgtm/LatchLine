@@ -13,6 +13,7 @@ import { DbError } from "./errors.js";
 import { nowIso, newId, json, guard } from "./util.js";
 import { normalizeEmail, normalizePhone } from "../validation/normalize.js";
 
+export const VARIANTS = ["contact_added", "emergency_added"];
 export const KINDS = ["new_lead", "human_requested", "repeat_contact"];
 export const PRIORITIES = { emergency: 0, urgent: 1, normal: 2 };
 export const DEFAULT_MAX_ATTEMPTS = 5;
@@ -94,8 +95,9 @@ export function notificationsRepo(db, B, leadsRepo) {
     contacts,
 
     /** Idempotent. Returns { created, existing, undeliverable }. */
-    async enqueueForLead({ leadId, conversationId, kind, priority, now = nowIso() }) {
+    async enqueueForLead({ leadId, conversationId, kind, priority, variant = null, now = nowIso() }) {
       if (!KINDS.includes(kind)) throw new DbError("invalid_data", "unknown notification kind");
+      if (variant !== null && !VARIANTS.includes(variant)) throw new DbError("invalid_data", "unknown notification variant");
       if (!(priority in PRIORITIES)) throw new DbError("invalid_data", "unknown priority");
       return guard(async () => {
         const recipients = pickRecipients(await sendable(), priority);
@@ -109,15 +111,15 @@ export function notificationsRepo(db, B, leadsRepo) {
           const none = t.channel === "none";
           stmts.push({
             sql: `INSERT INTO notifications (id, business_id, lead_id, kind, priority, priority_rank, channel, recipient, idempotency_key,
-                    status, max_attempts, next_attempt_at, last_error, created_at, updated_at)
-                  VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    status, max_attempts, next_attempt_at, last_error, created_at, updated_at, variant)
+                  VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                   ON CONFLICT(business_id, idempotency_key) DO NOTHING`,
             params: [id, B, leadId, kind, priority, PRIORITIES[priority], t.channel, t.address,
-              `${kind}:${leadId}:${conversationId ?? "-"}:${t.channel}:${t.address ?? "-"}`,
-              none ? "undeliverable" : "queued", max, none ? null : now, none ? "no_verified_contact" : null, now, now],
+              `${kind}:${leadId}:${conversationId ?? "-"}:${t.channel}:${t.address ?? "-"}${variant ? `:${variant}` : ""}`,
+              none ? "undeliverable" : "queued", max, none ? null : now, none ? "no_verified_contact" : null, now, now, variant],
           });
         }
-        stmts.push(audit("notifications_enqueued", leadId, { kind, priority, count: targets.length }));
+        stmts.push(audit("notifications_enqueued", leadId, { kind, priority, variant, count: targets.length }));
         const res = await db.batch(stmts);
         const created = res.slice(0, targets.length).reduce((n, r) => n + r.changes, 0);
         return { created, existing: targets.length - created, undeliverable: recipients.length === 0 };
@@ -208,7 +210,7 @@ export function notificationsRepo(db, B, leadsRepo) {
       return guard(async () => db.first("SELECT * FROM notifications WHERE id = ? AND business_id = ?", [id, B]));
     },
     async listForLead(leadId) {
-      return guard(() => db.all("SELECT id, kind, priority, channel, status, attempts, last_error, simulated FROM notifications WHERE business_id = ? AND lead_id = ? ORDER BY created_at, rowid", [B, leadId]));
+      return guard(() => db.all("SELECT id, kind, variant, priority, channel, status, attempts, last_error, simulated FROM notifications WHERE business_id = ? AND lead_id = ? ORDER BY created_at, rowid", [B, leadId]));
     },
     async attempts(id) {
       return guard(() => db.all("SELECT attempt_no, outcome, error_code FROM notification_attempts WHERE notification_id = ? AND business_id = ? ORDER BY attempt_no", [id, B]));
