@@ -26,6 +26,11 @@ Rule: nothing is called production-ready unless the required checks below have p
 
 ## Result log
 
+### 2026-11-23: Stage 6 production-readiness gate
+
+Result: full suite 1067 tests, 1067 pass, 0 fail (1043 before). New: `tests/tenant.isolation.test.mjs` (6), `tests/emergency.workflow.test.mjs` (17), shared `tests/helpers/web.mjs`. Defects reproduced before fixing: R1 (no safety text on business-limit hit, database down at site-key lookup; two tests failed on the old code), R2 (deletion audit row). Mutation checks: scoping removed from one lead query and one dashboard query: the isolation tests failed both times. One existing test was changed deliberately: `tests/app.test.mjs` "database down: chat returns 503" sent "I smell gas" and required no safety text; it now uses a normal message for the 503 case and a new test requires the safety text plus "not saved" for the emergency case.
+NOT verified (no access/provider): hosted D1, real email/SMS, delivery receipts, deployed Workers behaviour. Mock services and in-memory SQLite only. Not production-ready: see `PRODUCTION_READINESS_GATE.md`.
+
 ### 2026-11-23: Stage 6d independent security and reliability audit
 
 Result: full suite 1043 tests, 1043 pass, 0 fail (991 before; 51 new in `tests/audit.emergency.test.mjs` and 1 new local-D1 probe test for the compare-and-set pattern). Findings, severity, fixes and unresolved risks: `docs/SECURITY_AUDIT_6d.md`. Method: attack scripts first (each suspected bug reproduced before fixing), mutation checks (each fix removed again to prove its test fails), then two independent reviewer passes by agents that had not written the code; the second pass found two more bugs (odd-separator phone redaction, split-emoji text) which were fixed and re-tested. Bugs found: A1 to A10 in the audit document. No test was weakened; the weak assertions the reviewer pointed out (cap test passing with zero alerts) were tightened.

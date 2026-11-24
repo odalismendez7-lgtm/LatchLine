@@ -78,11 +78,15 @@ export function dashboardRepo(db, B) {
     /** Permanently erases the lead AND its conversation and messages (cascade). The audit row keeps ids only. */
     async deleteLead(actorId, id) {
       return guard(async () => {
-        const l = await db.first("SELECT conversation_id FROM leads WHERE id = ? AND business_id = ?", [id, B]);
+        const l = await db.first("SELECT conversation_id, emergency, phone, email FROM leads WHERE id = ? AND business_id = ?", [id, B]);
         if (!l) throw new DbError("not_found", "lead not found for this business");
+        // Deleting a lead also deletes its conversation, messages, history AND its alerts. The audit row is the only trace,
+        // so it records (without any customer detail) what was lost: whether it was an emergency, whether the customer could be
+        // reached, and how many alerts had not yet been accepted by a provider.
+        const unsent = await db.first("SELECT COUNT(*) AS n FROM notifications WHERE lead_id = ? AND business_id = ? AND status NOT IN ('sent','delivered')", [id, B]);
         await db.batch([
           { sql: "DELETE FROM conversations WHERE id = ? AND business_id = ?", params: [l.conversation_id, B] },
-          audit(actorId, "lead_deleted", id, { conversationId: l.conversation_id }),
+          audit(actorId, "lead_deleted", id, { conversationId: l.conversation_id, emergency: !!l.emergency, hadContact: !!(l.phone || l.email), alertsNotYetSent: unsent?.n ?? 0 }),
         ]);
       });
     },

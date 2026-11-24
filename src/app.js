@@ -66,7 +66,14 @@ export function createApp({ db, router = null, store, salt, clientLimit = { limi
     }
   }
 
-  async function safetyOnlyReply(request) {
+  // Why a message could not be saved. The safety guidance is identical in every case; only this honest sentence differs.
+  const NOT_SAVED = {
+    rate: "You're sending messages too quickly, so this message was not saved and nothing was sent to the business.",
+    busy: "This chat is very busy right now, so this message was not saved and nothing was sent to the business.",
+    unavailable: "The system is having trouble right now, so this message was not saved and nothing was sent to the business.",
+  };
+
+  async function safetyOnlyReply(request, reason = "rate") {
     try {
       const declared = Number(request.headers.get("Content-Length") || 0);
       if (declared > MAX_BODY_BYTES) return null;
@@ -78,8 +85,8 @@ export function createApp({ db, router = null, store, salt, clientLimit = { limi
       const safety = detectEmergency(norm.value, { pack: plumbingPack });
       if (!safety.emergency) return null;
       return {
-        reply: `${composeSafetyReply(safety, { leadSystemConnected: false })}\n\nYou're sending messages too quickly, so this message was not saved and nothing was sent to the business.`,
-        conversationId: null, urgent: true, leadStatus: "not_saved", persisted: false, rateLimited: true,
+        reply: `${composeSafetyReply(safety, { leadSystemConnected: false })}\n\n${NOT_SAVED[reason] ?? NOT_SAVED.unavailable}`,
+        conversationId: null, urgent: true, leadStatus: "not_saved", persisted: false, rateLimited: reason === "rate", notSavedReason: reason,
         degraded: { database: false, ai: false }, mode: "development",
       };
     } catch { return null; }
@@ -137,6 +144,10 @@ export function createApp({ db, router = null, store, salt, clientLimit = { limi
         }
 
         if (url.pathname === "/api/chat" && request.method === "POST") {
+          // Taken before anything reads the body, so every failure path below can still look for an emergency.
+          const bodyCopy = request.clone();
+          const safetyFallback = async (reason, cors) => { const e = await safetyOnlyReply(bodyCopy, reason); return e ? json(e, 200, cors) : null; };
+          try {
           const ip = request.headers.get("CF-Connecting-IP") || "unknown";
           const clientKey = await hashKey(salt, "client", ip);
           const rl = await clientLimiter.check(clientKey);
@@ -146,7 +157,7 @@ export function createApp({ db, router = null, store, salt, clientLimit = { limi
             // Safety exception: pure-code emergency detection (no database, no AI) still
             // answers a rate-limited client, because blocking a person in danger is worse
             // than the CPU cost. Nothing is stored or sent to the business.
-            const early = await safetyOnlyReply(request, origin);
+            const early = await safetyOnlyReply(request, "rate");
             if (early) return json(early, 200, cors);
             return json({ error: "Too many requests. Please wait and try again.", retryAfterSec: rl.retryAfterSec }, 429, cors, { "Retry-After": String(rl.retryAfterSec) });
           }
@@ -160,13 +171,13 @@ export function createApp({ db, router = null, store, salt, clientLimit = { limi
           if (!body || typeof body !== "object" || Array.isArray(body)) return json({ error: "Invalid request" }, 400, cors);
 
           let business;
-          try { business = await platform.businessBySiteKey(body.siteKey); } catch { return json({ error: "Service temporarily unavailable", retryable: true }, 503, cors); }
+          try { business = await platform.businessBySiteKey(body.siteKey); } catch { return (await safetyFallback("unavailable", cors || "*")) ?? json({ error: "Service temporarily unavailable", retryable: true }, 503, cors); }
           if (!business) return json({ error: "Unknown site key" }, 404, cors);
           if (business.status !== "active") return json({ error: "This chat is not available" }, 403, cors);
           if (!origin || !business.origins.includes(origin)) return json({ error: "Origin not allowed" }, 403, "");
 
           const bl = await businessLimiter.check(await hashKey(salt, "business", business.id));
-          if (!bl.allowed) return json({ error: "This chat is busy. Please try again shortly.", retryAfterSec: bl.retryAfterSec }, 429, origin, { "Retry-After": String(bl.retryAfterSec) });
+          if (!bl.allowed) return (await safetyFallback("busy", origin)) ?? json({ error: "This chat is busy. Please try again shortly.", retryAfterSec: bl.retryAfterSec }, 429, origin, { "Retry-After": String(bl.retryAfterSec) });
 
           const kb = await loadKnowledge(business.id);
           const result = await handleMessage(
@@ -180,6 +191,13 @@ export function createApp({ db, router = null, store, salt, clientLimit = { limi
             leadStatus: result.leadStatus, persisted: result.persisted, degraded: { database: result.degraded.database, ai: result.degraded.ai },
             mode: "development", notice: "Development build: mock AI only, not production-ready.",
           }, 200, origin);
+          } catch (e) {
+            // Anything unexpected (limiter store, database, engine): a person describing an emergency still gets the safety guidance.
+            // No private data is in that reply, so when the origin cannot be verified (the database may be the thing that failed) it is readable from any site.
+            const f = await safetyFallback("unavailable", (await originKnown(request.headers.get("Origin") || "")) ? request.headers.get("Origin") : "*");
+            if (f) return f;
+            throw e;
+          }
         }
 
         return json({ error: "Not found" }, 404, (await originKnown(origin)) ? origin : "");

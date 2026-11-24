@@ -168,12 +168,23 @@ describe("health and failures", () => {
     assert.equal(res.status, 503);
     assert.equal((await res.json()).databaseConnected, false);
   });
-  test("database down: chat returns 503, not a fake success", async () => {
+  test("database down: a normal chat returns 503, not a fake success", async () => {
+    const { app, db } = await setup();
+    db.first = db.all = db.run = db.batch = async () => { throw new Error("down"); };
+    const res = await post(app, { message: "what are your hours?", siteKey: KEY_A });
+    assert.ok([503, 404, 403].includes(res.status));
+    assert.notEqual(res.status, 200);
+  });
+  // Changed deliberately in the Stage 6 readiness gate: this test used to send "I smell gas" and require a 503, i.e. it
+  // pinned the defect that a person describing a gas smell got NO safety guidance when the database was down.
+  test("database down: an emergency still gets the safety guidance, flagged as not saved (never a fake success)", async () => {
     const { app, db } = await setup();
     db.first = db.all = db.run = db.batch = async () => { throw new Error("down"); };
     const res = await post(app, { message: "I smell gas", siteKey: KEY_A });
-    assert.ok([503, 404, 403].includes(res.status));
-    assert.notEqual(res.status, 200);
+    assert.equal(res.status, 200);
+    const j = await res.json();
+    assert.match(j.reply, /leave the building/i); assert.match(j.reply, /not saved/);
+    assert.equal(j.persisted, false); assert.equal(j.leadStatus, "not_saved");
   });
   test("internal errors never leak details", async () => {
     const { db } = await setup();
