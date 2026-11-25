@@ -75,6 +75,8 @@ export const SAY = {
     "Sorry for the confusion. I'm an automated assistant: I can answer questions from the business's verified information and record a request for the team. What would you like help with?",
     "Let me put it simply: tell me the plumbing problem, or ask a question about the business, and I'll take it from there.",
   ],
+  privacyRefusal: "I can't share information about other customers, other businesses, or how this assistant is set up.",
+  offTopic: (biz) => `I can only help with plumbing questions and requests${biz ? ` for ${biz}` : ""}.`,
   identity: "I'm an automated text assistant, not a person. I can answer questions from the business's verified information and record a request for the team to review.",
   statusBefore: "I can't dispatch anyone, see arrival times, or check on visits from this chat. I can record your request for the business team to review once I have your details.",
   statusAfter: "Your request is recorded for the business team to review. I can't see whether anyone has acted on it, and I can't promise when they will respond.",

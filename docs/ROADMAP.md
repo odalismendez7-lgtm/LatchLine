@@ -1,6 +1,6 @@
 # Roadmap and Future Improvements
 
-Last updated: 2026-11-22 · Each stage ends with: what was built, files changed, tests run, errors/limitations, next step. Nothing deploys publicly or costs money without founder approval.
+Last updated: 2026-11-24 · Each stage ends with: what was built, files changed, tests run, errors/limitations, next step. Nothing deploys publicly or costs money without founder approval.
 
 ## Stages
 
@@ -16,6 +16,8 @@ Last updated: 2026-11-22 · Each stage ends with: what was built, files changed,
 | 6d (built, tests pass, 2026-11-22) | Emergency partial-lead persistence (KI-23/KI-47): an emergency conversation now saves a lead and queues one alert as soon as the customer's own emergency message exists, even with no phone or email. Incomplete leads are marked in the database view, dashboard (chip, filter, count) and alert email. One follow-up alert when contact arrives, partial leads update safely later (`leads.update`), no duplicates on retries. Migration 0005 (notification `variant`). **Mock notifier only: no real delivery verified. Not production-ready** | 991 tests pass (65 new in `tests/emergency.partial.test.mjs`); see `TEST_CASES.md`, KI-23/KI-47 and KI-50 to KI-53 |
 | 6d-audit (done, 2026-11-23) | Independent security/reliability audit of Stage 6d: 10 confirmed bugs fixed with regression tests (lost follow-up alerts, silent contact overwrite, viewer search/redaction leaks, update race, split-emoji failure); two independent review passes. Unresolved: alert flooding (KI-55), hosted D1 unverified (KI-53). **Not production-ready** | 1043 tests pass; `SECURITY_AUDIT_6d.md` |
 | 6e readiness gate (done, 2026-11-23, **gate NOT passed**) | Safety text now survives business-limit, database and engine failures (R1); systematic tenant-isolation tests; end-to-end emergency workflow tests; KI-52 investigated; KI-55 design. Hosted D1 and real delivery verification blocked by missing access/provider (KI-60, KI-61) | 1067 tests pass; `PRODUCTION_READINESS_GATE.md`, `ALERT_FLOOD_PROTECTION.md` |
+| 7 website chat widget (built, tests pass, 2026-11-24, **not deployed**) | Embeddable widget + `/widget.js` + `/api/widget/config`, honest failure states, emergency safety text on every failure path, recovery/restart/accessibility/phone layout, install guide, reproducible conversation evaluation (found and fixed name-capture, repetition, context defects) | Browser, server and evaluation tests pass; see `WIDGET.md`, `CONVERSATION_EVAL.md`. Not hosted; mock AI only |
+| 7b independent adversarial audit (done, 2026-11-24) | Adversarial conversation/widget/tenant testing plus an independent reviewer; 20+ confirmed defects fixed with regression tests | `WIDGET_AUDIT_7B.md`. Unresolved: KI-62 to KI-68 and earlier KI-55/59/52/60/61/46. **Not production-ready.** Next milestone candidates need founder decisions (hosting, real provider, languages, address, idempotency key) |
 | 7 | Entitlements/plans (no billing), analytics | Entitlement and metric-accuracy tests passing |
 | 8 | Security hardening (rate limits, validation, audit log), backup/restore drill, runbooks, readiness report | Full test matrix in `TEST_CASES.md` run and results recorded |
 

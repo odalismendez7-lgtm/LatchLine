@@ -150,7 +150,7 @@ export const plumbingPack = {
 
     // ================= Spanish (lang: "es"). Text is accent-stripped before matching. =================
     { id: "es-gas", category: "gas_leak", lang: "es", patterns: [
-      R("\\bhuele\\s+a\\s+gas\\b"), R("\\bolor\\s+a\\s+gas\\b"),
+      R("\\bhuel[eo]\\s+(?:a\\s+)?gas\\b"), R("\\bolor\\s+a\\s+gas\\b"),
       R("\\b(?:fuga|escape)\\s+de\\s+gas\\b"), R("\\bgas\\s+(?:se\\s+)?(?:esta\\s+)?escapando\\b"),
     ] },
     { id: "es-co", category: "carbon_monoxide", lang: "es", patterns: [

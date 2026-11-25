@@ -26,6 +26,21 @@ Rule: nothing is called production-ready unless the required checks below have p
 
 ## Result log
 
+### 2026-11-25: Stage 7 widget + Stage 7B adversarial audit
+
+Full suite **1232 / 1232 pass, 0 fail, 0 skipped** (was 1067 at Stage 6). All on a local runtime: in-memory SQLite, mock AI, Playwright headless Chromium. **None of this is hosted-Cloudflare, real-provider, real-model, real-screen-reader or real-phone verification.**
+
+| Area | Tests | File |
+|---|---|---|
+| Widget server side (`/widget.js`, `/api/widget/config`, tenant scoping, leakage, size budget, bundle freshness) | 21 | `tests/widget.server.test.mjs` |
+| Widget in real Chromium on a separate website origin (mount rules, failures, emergencies, recovery, restart, XSS, accessibility, 375px phone, tablet) | 51 | `tests/widget.browser.test.mjs` |
+| Conversation evaluation (64 scenarios, aggregate gates, determinism, metric self-tests, name/probe/long-emergency regressions) | see `eval.conversation.test.mjs` | `tests/eval.conversation.test.mjs`, `tests/eval/conversation.eval.mjs`, results in `CONVERSATION_EVAL.md` |
+| Stage 7B tenant/abuse checks (40 interleaved conversations across two businesses, ids, probes) | see file | `tests/adversarial.7b.test.mjs` |
+
+Deliberate test changes: the widget test that pinned "New chat discards a pending reply" now pins "New chat is refused while a reply is pending" (review finding 10: discarding could drop an emergency reply). Existing engine tests were not changed; all 1130 earlier tests still pass after the engine fixes.
+
+See `WIDGET_AUDIT_7B.md` for the defects found, fixes and the independent review.
+
 ### 2026-11-23: Stage 6 production-readiness gate
 
 Result: full suite 1067 tests, 1067 pass, 0 fail (1043 before). New: `tests/tenant.isolation.test.mjs` (6), `tests/emergency.workflow.test.mjs` (17), shared `tests/helpers/web.mjs`. Defects reproduced before fixing: R1 (no safety text on business-limit hit, database down at site-key lookup; two tests failed on the old code), R2 (deletion audit row). Mutation checks: scoping removed from one lead query and one dashboard query: the isolation tests failed both times. One existing test was changed deliberately: `tests/app.test.mjs` "database down: chat returns 503" sent "I smell gas" and required no safety text; it now uses a normal message for the 503 case and a new test requires the safety text plus "not saved" for the emergency case.

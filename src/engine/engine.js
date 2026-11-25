@@ -26,7 +26,7 @@
 import { detectEmergency, composeSafetyReply } from "../safety/detector.js";
 import { plumbingPack } from "../packs/plumbing.js";
 import { normalizeMessage, sanitizeText, MAX_ISSUE_CHARS } from "../validation/normalize.js";
-import { extractContact, extractName, extractUrgency, isMostlyContactData } from "./extract.js";
+import { extractContact, extractName, extractUrgency, isMostlyContactData, spokenDigitsToDigits, looksLikeName, looksLikeBareName, extractEmbeddedName, hasProblemWord, looksLikeNameWhenAsked, asksToRepeat, isPrivacyProbe, isOffTopic } from "./extract.js";
 import { guardAiReply } from "./guard.js";
 import { forBusiness } from "../db/tenant.js";
 import { VARIANTS, MAX_CONTACT_REVISIONS } from "../db/notifications.js";
@@ -105,7 +105,7 @@ function sanitizeState(raw) {
     lastUserFp: typeof s.lastUserFp === "string" ? s.lastUserFp.slice(0, 300) : "",
     userRepeats: Number.isInteger(s.userRepeats) ? Math.min(s.userRepeats, 100) : 0,
     turns: Number.isInteger(s.turns) ? Math.min(s.turns, 10000) : 0,
-    contactStuck: !!s.contactStuck, nearLimitSaid: !!s.nearLimitSaid,
+    contactStuck: !!s.contactStuck, nearLimitSaid: !!s.nearLimitSaid, abandoned: s.abandoned === true, lastReply: typeof s.lastReply === "string" ? s.lastReply.slice(0, 3000) : undefined,
     leadSnap: s.leadSnap && typeof s.leadSnap === "object" && !Array.isArray(s.leadSnap)
       ? Object.fromEntries(["name", "phone", "email", "zip", "urgency", "issue"].map((k) => [k, typeof s.leadSnap[k] === "string" ? s.leadSnap[k].slice(0, 1200) : null])) : null,
     alerted: !!s.alerted, contactNotified: !!s.contactNotified, contactRev: Number.isInteger(s.contactRev) ? Math.max(0, Math.min(s.contactRev, 100)) : 0, handoffQueued: !!s.handoffQueued, partialNoted: !!s.partialNoted,
@@ -178,7 +178,7 @@ export async function handleMessage(deps, input) {
 
   const norm = normalizeMessage(input?.message);
   if (!norm.ok) return { ok: false, error: `message_${norm.reason}` };
-  const message = norm.value;
+  const message = spokenDigitsToDigits(norm.value); // voice dictation: "two one seven..." becomes digits everywhere downstream
 
   // ---- 2. safety first: pure code, works with the database and AI both down ----
   const safety = detectEmergency(message, { pack, procedureOverrides: kb?.procedureOverrides?.() ?? {} });
@@ -212,12 +212,13 @@ export async function handleMessage(deps, input) {
   const finish = async (reply, extra = {}) => {
     // Never say the exact same thing twice in a row (the safety text is exempt: it must always be complete).
     const replyFp = fingerprint(reply).slice(0, 300);
-    if (replyFp && replyFp === state.lastReplyFp && !safety.emergency && !extra.limited) {
+    if (replyFp && replyFp === state.lastReplyFp && !safety.emergency && !extra.limited && !extra.deliberate) {
       const offer = offerPerson();
       reply = `${SAY.loopBreak} ${offer || (state.handoff ? "A person at the business can follow up from your recorded request." : contactAdvice(kb))}`.trim();
     }
     state.lastReplyFp = fingerprint(reply).slice(0, 300);
     let persisted = true;
+    state.lastReply = reply.slice(0, 3000);
     state.history = [...state.history, { role: "user", content: message.slice(0, 500) }, { role: "assistant", content: reply.slice(0, 500) }].slice(-HISTORY_TURNS * 2);
     try {
       await tenant.conversations.addMessage(conv.id, { role: "customer", content: message, meta: safety.emergency ? { emergency: safety.categories } : {} });
@@ -336,6 +337,12 @@ export async function handleMessage(deps, input) {
     return await finish(safety.emergency ? `${safetyReply}\n\n${TEXT.limited}` : TEXT.limited, { limited: true });
   }
 
+  // "can you repeat that?": say the last thing again, change nothing
+  if (!safety.emergency && asksToRepeat(message)) {
+    const last = typeof state.lastReply === "string" ? state.lastReply : null;
+    if (last) return await finish(`Sure. ${last.replace(/^Sure\. /, "")}`, { deliberate: true });
+  }
+
   const notes = []; // short lines shown before the next question
   const parts = [];
   if (safetyReply) parts.push(safetyReply);
@@ -395,11 +402,16 @@ export async function handleMessage(deps, input) {
       }
     }
 
-    // "my name is Dana Cruz" is a name even when the assistant was asking about something else
+    // "my name is Dana Cruz" / "I'm Sam Rivera" is a name wherever it appears and whatever the assistant was asking about
     let nameIntro = false;
-    if (!state.slots.name && !consumed && /^\s*(?:my name is|my name's|name is|name:|call me)\s+\S/i.test(message)) {
-      const n = extractName(message.replace(/^\s*(?:my name is|my name's|name is|name:|call me)\s+/i, ""));
-      if (n.ok) { state.slots.name = n.value; consumed = true; nameIntro = true; delete state.settled.name; }
+    if (!state.slots.name && !sig.correction) {
+      const emb = extractEmbeddedName(message);
+      if (emb) { state.slots.name = emb.value; consumed = true; nameIntro = emb.only; delete state.settled.name; }
+    }
+    // a bare capitalised "Maria Lopez" is a name, not the answer to "what is the plumbing problem?"
+    let bareName = false;
+    if (!state.slots.name && !nameIntro && !found.phone && !found.email && aw !== "name" && !sig.question && !sig.smalltalkOnly && !sig.greeting && !sig.thanks && !sig.ack && !sig.noise && !sig.confusion && looksLikeBareName(message)) {
+      state.slots.name = extractName(message).value; consumed = true; bareName = true; delete state.settled.name;
     }
 
     // a yes/no to an earlier "would you like a person to follow up?"
@@ -411,9 +423,12 @@ export async function handleMessage(deps, input) {
     }
 
     const kbResult = kb ? kb.retrieve(message) : { status: "no_match", results: [] };
-    const kbHit = kbResult.status !== "no_match" && !(sig.wrongValue || sig.correction || sig.whyAsked || sig.alreadyTold || sig.summaryAsk || sig.identity);
+    const nameAnswer = state.awaiting === "name" && !sig.question && sig.wordCount <= 3 && looksLikeNameWhenAsked(message); // "John Price" is a name, not a price question
+    const privacyProbe = isPrivacyProbe(message), offTopic = !privacyProbe && isOffTopic(message);
+    const givingDetails = Object.keys(found).length > 0 && !sig.question; // "my number is 217-555-0147" answers nothing about the business's number
+    const kbHit = kbResult.status !== "no_match" && !givingDetails && !nameAnswer && !privacyProbe && !offTopic && !(sig.wrongValue || sig.correction || sig.whyAsked || sig.alreadyTold || sig.summaryAsk || sig.identity);
     // Turns that are about the conversation itself, not an answer to the pending question.
-    const sideTurn = !!(sig.question || sig.confusion || sig.actionAsk || sig.identity || sig.summaryAsk || sig.greeting || sig.thanks || sig.frustration === 2 || sig.abandon || sig.reset || sig.alreadyTold || kbHit || offerAnswered || sig.falseAlarm);
+    const sideTurn = !!(safety.emergency || privacyProbe || offTopic || sig.question || sig.confusion || sig.actionAsk || sig.identity || sig.summaryAsk || sig.greeting || sig.thanks || sig.frustration === 2 || sig.abandon || sig.reset || sig.alreadyTold || kbHit || offerAnswered || sig.falseAlarm);
     const optionalGiveUp = sig.skip || sig.no || sig.dontKnow;
 
     let retried = null;
@@ -424,7 +439,13 @@ export async function handleMessage(deps, input) {
       if (optionalGiveUp && !sideTurn) settle("name");
       else if (!sideTurn && !sig.noise && !sig.ack) {
         const n = extractName(message);
-        if (n.ok && !found.phone && !found.email) { state.slots.name = n.value; consumed = true; }
+        if (n.ok && looksLikeNameWhenAsked(message) && !found.phone && !found.email) { state.slots.name = n.value; consumed = true; }
+        else if (n.ok && !sig.question && sig.wordCount >= 3 && hasProblemWord(message) && !found.phone && !found.email) {
+          // they answered with (more of) the problem instead of a name: keep it with the problem and ask for the name once more (not a failed attempt)
+          const have = state.slots.issue && state.slots.issue !== NO_ISSUE_TEXT ? state.slots.issue : "";
+          state.slots.issue = sanitizeText(have && !have.includes(message) ? `${have} | ${message}` : have || message, { maxLength: MAX_ISSUE_CHARS });
+          consumed = true; delete state.settled.issue; retried = "name"; attempt = false;
+        }
         else { retried = "name"; attempt = !consumed || !Object.keys(found).length; }
       } else if (sig.ack && !sig.yes && !sig.no) { retried = "name"; attempt = true; }
       else if (sig.yes) { retried = "name"; attempt = true; }
@@ -455,9 +476,10 @@ export async function handleMessage(deps, input) {
 
     const contactOnly = isMostlyContactData(message, found);
     if (!state.slots.issue) {
-      const notDescription = nameIntro || INSTRUCTION_LIKE.test(message) || sig.smalltalkOnly || sig.noise || sig.confusion || sig.identity || sig.summaryAsk || (sig.angry && sig.wordCount <= 8) || sig.abandon || sig.reset || sig.actionAsk || sig.dontKnow && sig.wordCount <= 3 || sig.skip && sig.wordCount <= 4;
-      const firstFreeText = !asksForHuman && !state.awaiting && !kbHit && !contactOnly && !sig.question && !notDescription && sig.wordCount >= 3;
-      const answersIssue = state.awaiting === "issue" && !contactOnly && !sig.question && !asksForHuman && !notDescription && !(kbHit && sig.wordCount <= 6);
+      const notDescription = nameIntro || bareName || privacyProbe || offTopic || INSTRUCTION_LIKE.test(message) || sig.smalltalkOnly || sig.noise || sig.confusion || sig.identity || sig.summaryAsk || (sig.angry && sig.wordCount <= 8) || sig.abandon || sig.reset || sig.actionAsk || sig.dontKnow && sig.wordCount <= 3 || sig.skip && sig.wordCount <= 4;
+      const firstFreeText = !asksForHuman && !state.awaiting && !kbHit && !contactOnly && !sig.question && !notDescription && (sig.wordCount >= 3 || (sig.wordCount >= 1 && hasProblemWord(message)));
+      const vagueOnly = sig.wordCount <= 2 && !hasProblemWord(message);
+      const answersIssue = state.awaiting === "issue" && !vagueOnly && !contactOnly && !sig.question && !asksForHuman && !notDescription && !(kbHit && sig.wordCount <= 6);
       if (answersIssue || safety.emergency || firstFreeText) {
         state.slots.issue = sanitizeText(message, { maxLength: MAX_ISSUE_CHARS });
         consumed = true;
@@ -471,7 +493,7 @@ export async function handleMessage(deps, input) {
 
     // ---- give up asking a question that keeps failing (never loop) ----
     let stuckNote = "";
-    if (retried && attempt) {
+    if (retried && attempt && !privacyProbe && !offTopic) { // probes and chatter never use up the customer's attempts
       state.asked[retried] = (state.asked[retried] ?? 0) + 1;
       if (state.asked[retried] >= MAX_ASKS[retried]) {
         if (retried === "name" || retried === "zip" || retried === "urgency") { state.settled[retried] = "gave_up"; notes.push(pick(state, "skipped", SAY.skipped)); }
@@ -487,6 +509,10 @@ export async function handleMessage(deps, input) {
       for (const k of ORDER) if (!isFilled(state.slots, k)) state.settled[k] = state.settled[k] ?? "skipped";
       wrapUp = true; consumed = true;
     }
+
+    // After "never mind", a bare thank-you is answered with a thank-you, not with a new question.
+    const quietAfterCancel = !!state.abandoned && !consumed && !asksForHuman && !safety.emergency && (sig.thanks || sig.ack || sig.greeting || sig.smalltalkOnly);
+    if (state.abandoned && !quietAfterCancel && !sig.abandon) state.abandoned = false;
 
     // ---- 5. what to say ----
     const kbTexts = () => [...new Set(kbResult.results.map((r) => r.text))].join(" ");
@@ -507,7 +533,7 @@ export async function handleMessage(deps, input) {
       if (sig.abandon && !wrapUp && !sig.thanks) {
         // "never mind": nothing is recorded, and we stop asking until they come back
         notes.push(state.leadId ? SAY.abandonPartial : SAY.abandonOpen);
-        state.awaiting = null; handledBody = true; consumed = true;
+        state.awaiting = null; state.abandoned = true; handledBody = true; consumed = true;
         parts.push(...notes.filter(Boolean)); return await finish(parts.join("\n\n")); // never save in the same turn as "nothing was recorded"
       } else if (sig.reset && state.leadId) {
         // an emergency lead is already saved: never pretend it can be undone, and never wipe what it holds
@@ -520,7 +546,9 @@ export async function handleMessage(deps, input) {
         parts.push(pick(state, "greeting", SAY.greeting(kb?.grounding?.()?.businessName)));
         state.awaiting = "issue"; state.asked.issue = Math.max(state.asked.issue ?? 0, 1);
         return await finish(parts.join("\n\n"));
-      } else if (sig.identity) { notes.push(SAY.identity); handledBody = true; }
+      } else if (privacyProbe) { notes.push(SAY.privacyRefusal); handledBody = true; consumed = true; }
+      else if (offTopic) { notes.push(SAY.offTopic(kb?.grounding?.()?.businessName)); handledBody = true; consumed = true; }
+      else if (sig.identity) { notes.push(SAY.identity); handledBody = true; }
       else if (sig.summaryAsk || (sig.alreadyTold && !sig.confusion)) {
         notes.push(summaryText(state, { stageDone: false })); handledBody = true;
       } else if (sig.whyAsked && aw && WHY[aw]) { notes.push(WHY[aw]); handledBody = true; }
@@ -596,10 +624,11 @@ export async function handleMessage(deps, input) {
       if (!stuckNote && !state.contactStuck) { state.contactStuck = true; parts.push(`${state.leadId ? SAY.noContactPartial : SAY.noContactCannotRecord} ${contactAdvice(kb)}`); }
     } else if (missing.length === 0) {
       state.awaiting = null; // no description yet: wait for the customer, do not loop
-    } else if (!(sig.abandon && !wrapUp && !sig.thanks)) {
+    } else if (!(sig.abandon && !wrapUp && !sig.thanks) && !quietAfterCancel) {
       const pendingOfferNow = state.pendingOffer === "handoff" && notes.some((n) => n === SAY.offerPerson || String(n).endsWith(SAY.offerPerson));
       const next = forceNext && missing.includes(forceNext) ? forceNext : sig.reset && !state.leadId ? missing[0] : retried ?? (aw && missing.includes(aw) && sideTurn ? aw : missing[0]);
       if (state.contactStuck && next === "phone") state.awaiting = null; // never re-ask what they declined or could not give
+      else if (state.contactStuck && !hasContact(state.slots) && !state.leadId) state.awaiting = null; // nothing can be recorded, so no more questions
       else if (!pendingOfferNow) {
         if (next !== aw && !retried) state.asked[next] = (state.asked[next] ?? 0) + 1;
         state.awaiting = next;
@@ -667,7 +696,7 @@ export async function handleMessage(deps, input) {
     if (state.stage === "done") parts.push(prefix || "Your request is already recorded. Is there anything else I can help with?");
     else {
       const missing = neededSlots(state);
-      const next = state.contactStuck ? missing.find((k) => k !== "phone") : missing[0];
+      const next = state.contactStuck ? (!hasContact(state.slots) && !state.leadId ? null : missing.find((k) => k !== "phone")) : missing[0];
       if (prefix) parts.push(prefix);
       if (next) { state.awaiting = next; parts.push(pick(state, `ask_${next}`, PROMPTS[next])); }
       else parts.push(pick(state, "idle", ["I'm here. Tell me the plumbing problem, or ask me about the business.", "Whenever you're ready, tell me what's going on with your plumbing or ask a question about the business."]));

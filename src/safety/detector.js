@@ -87,7 +87,22 @@ function procedureFor(pack, category, lang, override) {
  * @param {string} message
  * @param {{ pack: object, procedureOverrides?: Record<string, object> }} options
  */
-export function detectEmergency(message, { pack, procedureOverrides = {} } = {}) {
+// A long message (dictation, a pasted description) used to be read only up to its first 5000 characters, so a danger
+// mentioned later was missed. Long text is now scanned in overlapping windows; the window with the most matches wins.
+const WINDOW_STRIDE = 2500, MAX_SCANNED_CHARS = 100_000;
+export function detectEmergency(message, opts = {}) {
+  if (typeof message !== "string" || message.length <= MAX_INPUT_CHARS) return detectWindow(message, opts);
+  const text = message.slice(0, MAX_SCANNED_CHARS);
+  let best = null;
+  for (let start = 0; start < text.length; start += WINDOW_STRIDE) {
+    const r = detectWindow(text.slice(start, start + MAX_INPUT_CHARS), opts);
+    if (r.emergency && (!best || r.matches.length > best.matches.length)) best = r;
+    if (start + MAX_INPUT_CHARS >= text.length) break;
+  }
+  return best ?? detectWindow(text.slice(0, MAX_INPUT_CHARS), opts);
+}
+
+function detectWindow(message, { pack, procedureOverrides = {} } = {}) {
   if (!pack) throw new TypeError("detectEmergency requires an industry pack");
 
   const none = { emergency: false, severity: null, language: null, categories: [], matches: [], procedures: [], reply: "" };

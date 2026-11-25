@@ -16,19 +16,22 @@ import { forBusiness } from "./db/tenant.js";
 import { dispatchDue } from "./notify/dispatcher.js";
 import { plumbingPack } from "./packs/plumbing.js";
 import { detectEmergency, composeSafetyReply } from "./safety/detector.js";
-import { normalizeMessage } from "./validation/normalize.js";
+import { normalizeMessage, MAX_MESSAGE_CHARS } from "./validation/normalize.js";
 import { createAuthService } from "./auth/service.js";
 import { createDashboardApi } from "./dashboard/api.js";
 import { dashboardPage } from "./dashboard/page.js";
+import { WIDGET_JS, WIDGET_VERSION } from "./widget/widget.bundle.js";
 
 const MAX_BODY_BYTES = 8 * 1024;
+const MODE = "development"; // honest label: mock AI only; shown by the widget
 const PACKS = { plumbing: plumbingPack };
 
-export function createApp({ db, router = null, store, salt, clientLimit = { limit: 30, windowMs: 60_000 }, businessLimit = { limit: 600, windowMs: 60_000 }, now = Date.now, showMockReplies = false, extraKnownOrigins = [], channels = null, accounts = null }) {
+export function createApp({ db, router = null, store, salt, clientLimit = { limit: 30, windowMs: 60_000 }, businessLimit = { limit: 600, windowMs: 60_000 }, widgetConfigLimit = { limit: 60, windowMs: 60_000 }, now = Date.now, showMockReplies = false, extraKnownOrigins = [], channels = null, accounts = null }) {
   if (typeof salt !== "string" || salt.length < 8) throw new Error("createApp needs a salt of at least 8 characters");
   const platform = platformRepo(db);
   const clientLimiter = createLimiter({ store, ...clientLimit, now });
   const businessLimiter = createLimiter({ store, ...businessLimit, now });
+  const widgetConfigLimiter = createLimiter({ store, ...widgetConfigLimit, now });
 
   // Owner accounts + dashboard. Enabled only when a mailer is supplied (mock only today).
   const auth = accounts ? createAuthService({ db, mailer: accounts.mailer, store, salt, now, iterations: accounts.iterations, cfg: accounts.cfg }) : null;
@@ -70,6 +73,7 @@ export function createApp({ db, router = null, store, salt, clientLimit = { limi
   const NOT_SAVED = {
     rate: "You're sending messages too quickly, so this message was not saved and nothing was sent to the business.",
     busy: "This chat is very busy right now, so this message was not saved and nothing was sent to the business.",
+    toolong: "That message was too long, so it was not saved and nothing was sent to the business. Please send a shorter message.",
     unavailable: "The system is having trouble right now, so this message was not saved and nothing was sent to the business.",
   };
 
@@ -81,8 +85,10 @@ export function createApp({ db, router = null, store, salt, clientLimit = { limi
       if (raw.length > MAX_BODY_BYTES) return null;
       const body = JSON.parse(raw);
       const norm = normalizeMessage(body?.message);
-      if (!norm.ok) return null;
-      const safety = detectEmergency(norm.value, { pack: plumbingPack });
+      // an over-long message (long voice dictation, a pasted description) can still describe a danger: look at all of it
+      const text = norm.ok ? norm.value : (norm.reason ?? norm.error) === "too_long" ? body.message.slice(0, MAX_BODY_BYTES) : null;
+      if (text == null) return null;
+      const safety = detectEmergency(text, { pack: plumbingPack });
       if (!safety.emergency) return null;
       return {
         reply: `${composeSafetyReply(safety, { leadSystemConnected: false })}\n\n${NOT_SAVED[reason] ?? NOT_SAVED.unavailable}`,
@@ -129,6 +135,29 @@ export function createApp({ db, router = null, store, salt, clientLimit = { limi
             status: ok ? 204 : 403,
             headers: ok ? { "Access-Control-Allow-Origin": origin, "Access-Control-Allow-Methods": "GET, POST, OPTIONS", "Access-Control-Allow-Headers": "Content-Type", "Access-Control-Max-Age": "600", Vary: "Origin" } : { Vary: "Origin" },
           });
+        }
+
+        // The embeddable chat widget (static, public code, no secrets). Cached briefly; the version is the content hash.
+        if (url.pathname === "/widget.js" && (request.method === "GET" || request.method === "HEAD")) {
+          const etag = `"${WIDGET_VERSION}"`;
+          const h = { "Content-Type": "text/javascript; charset=utf-8", "Cache-Control": "public, max-age=300", ETag: etag, "X-Content-Type-Options": "nosniff", "Cross-Origin-Resource-Policy": "cross-origin" };
+          if (request.headers.get("If-None-Match") === etag) return new Response(null, { status: 304, headers: h });
+          return new Response(request.method === "HEAD" ? null : WIDGET_JS, { status: 200, headers: h });
+        }
+
+        // Public display configuration for the widget: business name and welcome only. The business is found from the
+        // site key and the request's origin must be registered for THAT business. Every failure (unknown key, wrong
+        // website, inactive business) is the same 404, so this cannot be used to probe which keys or websites exist.
+        if (url.pathname === "/api/widget/config" && request.method === "GET") {
+          const asked = origin || (request.headers.get("Sec-Fetch-Site") === "same-origin" ? url.origin : "");
+          const cors = asked || "*";
+          const rl = await widgetConfigLimiter.check(await hashKey(salt, "widgetcfg", request.headers.get("CF-Connecting-IP") || "unknown"));
+          if (!rl.allowed) return json({ error: "Too many requests", retryAfterSec: rl.retryAfterSec }, 429, cors, { "Retry-After": String(rl.retryAfterSec) });
+          let business = null;
+          try { business = await platform.businessBySiteKey(url.searchParams.get("siteKey")); } catch { return json({ error: "Service temporarily unavailable", retryable: true }, 503, cors); }
+          if (!business || business.status !== "active" || !asked || !business.origins.includes(asked)) return json({ error: "Not available" }, 404, cors);
+          const name = String(business.name).slice(0, 120);
+          return json({ name, welcome: `Hi, this is the ${name} website assistant. What can I help you with?`, mode: MODE, maxMessageChars: MAX_MESSAGE_CHARS, apiVersion: 1 }, 200, asked, { "Cache-Control": "private, max-age=60" });
         }
 
         if (dashboard) {
@@ -185,7 +214,10 @@ export function createApp({ db, router = null, store, salt, clientLimit = { limi
             { message: body.message, conversationId: typeof body.conversationId === "string" ? body.conversationId.slice(0, 80) : null }
           );
           if (result.notificationsQueued) kick(ctx);
-          if (!result.ok) return json({ error: "Message must be 1–1200 characters", code: result.error }, 400, origin);
+          if (!result.ok) {
+            if (result.error === "message_too_long" || result.error === "too_long") { const e = await safetyOnlyReply(bodyCopy, "toolong"); if (e) return json(e, 200, origin); }
+            return json({ error: "Message must be 1–1200 characters", code: result.error }, 400, origin);
+          }
           return json({
             reply: result.reply, conversationId: result.conversationId, urgent: result.urgent,
             leadStatus: result.leadStatus, persisted: result.persisted, degraded: { database: result.degraded.database, ai: result.degraded.ai },

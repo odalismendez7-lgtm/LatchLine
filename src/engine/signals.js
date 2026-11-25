@@ -71,7 +71,7 @@ const FALSE_ALARM = /\b(?:false alarm|(?:it|that)(?:'s| is| was) (?:nothing|fine
 const CORRECTION = /\b(?:actually|i meant|i mean|correction|oops|typo|let me (?:correct|fix)|that'?s (?:not right|wrong|not correct|incorrect)|(?:that|it) was (?:wrong|a typo)|(?:not|isn'?t) (?:my|the) (?:phone|number|name|zip|address|email)|wrong (?:phone|number|name|zip|email)|(?:change|update|fix) (?:my|the) (?:phone|number|name|zip|email|address|issue|problem)|my (?:phone|number|name|zip|email) (?:is|should be) (?:actually|really|now)|sorry,? (?:it'?s|its|my|that))\b|^no[,.! ]+(?:it'?s|its|my|the|that'?s|that is)\b|^wait\b/;
 const WRONG_VALUE = /\b(?:wrong|incorrect|not (?:my|the)|typo) (?:phone|number|zip|email|name)\b|\b(?:phone|number|zip|email|name) (?:is|was) (?:wrong|incorrect|a typo)\b|\bthat'?s not (?:my|the) (?:phone|number|zip|email|name)\b/;
 
-const SKIP = /\b(?:skip(?: it| that| this| that one)?|pass|rather not|prefer not|don'?t want to (?:give|share|say|provide|answer)|not comfortable|no thanks|i won'?t|none of your business|prefer to keep (?:it|that) private|decline|not sharing)\b/;
+const SKIP = /\b(?:skip(?: it| that| this| that one)?|pass|rather not|prefer not|don'?t want to (?:give|share|say|provide|answer)|not comfortable|not giving|won'?t give|refuse to|no thanks|i won'?t|none of your business|prefer to keep (?:it|that) private|decline|not sharing)\b/;
 const DONT_KNOW = /\b(?:i don'?t know|dunno|not sure|no idea|idk|unsure|can'?t say|can'?t tell)\b/;
 
 const SUMMARY = /\bwhat (?:do you|have you|did you) (?:have|got|record(?:ed)?|saved?|collect(?:ed)?)\b|\bwhat did i (?:tell|say|give)\b|\b(?:do you|did you) (?:have|get|catch|save|record) my\b|\bread (?:it |that |everything )?back\b|\bsummar\w+\b|\bwhat(?:'s| is) on file\b/;
