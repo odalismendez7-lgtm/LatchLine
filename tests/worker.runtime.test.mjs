@@ -63,6 +63,29 @@ describe("Worker entry: accounts are OFF unless explicitly switched on (KI-32)",
   });
 });
 
+describe("Worker entry: optional Workers AI binding", () => {
+  test("Workers AI is reported as configured only when the explicit flag and binding are present", async () => {
+    const w = boot({
+      LATCHLINE_AI_PROVIDER: "workers-ai",
+      WORKERS_AI_MODEL: "test-model",
+      AI: { run: async () => ({ choices: [{ message: { content: "test response" } }] }) },
+    });
+    const health = await w.call("GET", "/health");
+    assert.equal(health.status, 200);
+    assert.equal(health.data.mode, "live-ai");
+    assert.equal(health.data.realAIConfigured, true);
+    assert.equal(health.data.realAIConnected, false);
+  });
+
+  test("Workers AI binding alone does not enable inference; mock remains default", async () => {
+    const w = boot({ AI: { run: async () => { throw new Error("must not run"); } } });
+    const health = await w.call("GET", "/health");
+    assert.equal(health.data.mode, "development");
+    assert.equal(health.data.realAIConfigured, false);
+    assert.equal(health.data.realAIConnected, false);
+  });
+});
+
 describe("Worker entry: configuration failures are honest", () => {
   test("missing or weak RATE_LIMIT_SALT gives 503 'not configured' and touches nothing", async () => {
     for (const salt of [undefined, "", "short"]) {
