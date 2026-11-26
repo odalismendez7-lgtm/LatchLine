@@ -209,6 +209,17 @@ export function createApp({ db, router = null, store, salt, clientLimit = { limi
           const bl = await businessLimiter.check(await hashKey(salt, "business", business.id));
           if (!bl.allowed) return (await safetyFallback("busy", origin)) ?? json({ error: "This chat is busy. Please try again shortly.", retryAfterSec: bl.retryAfterSec }, 429, origin, { "Retry-After": String(bl.retryAfterSec) });
 
+          // Validate the customer message before claiming an idempotency key. Otherwise a malformed
+          // request could leave a permanent "processing" row that blocks a corrected retry.
+          const normalized = normalizeMessage(body.message);
+          if (!normalized.ok) {
+            if (normalized.reason === "too_long") {
+              const e = await safetyOnlyReply(bodyCopy, "toolong");
+              if (e) return json(e, 200, origin);
+            }
+            return json({ error: "Message must be 1–1200 characters", code: normalized.error || normalized.reason }, 400, origin);
+          }
+
           // Optional idempotency key: replay a completed response for a client retry.
           // The ledger is tenant-scoped and claimed atomically via INSERT OR IGNORE.
           const requestKey = request.headers.get("Idempotency-Key") || "";
@@ -227,7 +238,7 @@ export function createApp({ db, router = null, store, salt, clientLimit = { limi
           const kb = await loadKnowledge(business.id);
           const result = await handleMessage(
             { db, businessId: business.id, kb, router, pack: PACKS[business.industry] ?? plumbingPack, showMockReplies },
-            { message: body.message, conversationId: typeof body.conversationId === "string" ? body.conversationId.slice(0, 80) : null }
+            { message: normalized.value, conversationId: typeof body.conversationId === "string" ? body.conversationId.slice(0, 80) : null }
           );
           if (result.notificationsQueued) kick(ctx);
           if (!result.ok) {
