@@ -130,10 +130,11 @@ export function forBusiness(db, businessId) {
         const id = newId("led"), t = nowIso();
         await db.batch([
           {
-            sql: `INSERT INTO leads (id, business_id, conversation_id, name, phone, email, zip, issue_category, issue_text, urgency,
+            sql: `INSERT INTO leads (id, business_id, conversation_id, name, phone, email, zip, address_line1, address_line2, city, state, issue_category, issue_text, urgency,
                   preferred_contact, preferred_time, emergency, emergency_categories, zip_in_verified_area, summary, created_at, updated_at)
-                  VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+                  VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
             params: [id, B, conversationId, lead.name ?? null, lead.phone ?? null, lead.email ?? null, lead.zip ?? null,
+              lead.addressLine1 ?? null, lead.addressLine2 ?? null, lead.city ?? null, lead.state ?? null,
               lead.issueCategory ?? null, lead.issueText ?? null, lead.urgency ?? null, lead.preferredContact ?? null,
               lead.preferredTime ?? null, lead.emergency ? 1 : 0, json(lead.emergencyCategories ?? []),
               lead.zipInVerifiedArea ? "yes" : "unconfirmed", lead.summary ?? "", t, t],
@@ -191,13 +192,14 @@ export function forBusiness(db, businessId) {
       // Text is stored well-formed (a lone UTF-16 half would be silently rewritten by the database and fail the read-back).
       patch = Object.fromEntries(Object.entries(patch).map(([k, v]) => [k, typeof v === "string" ? v.toWellFormed() : v]));
       // Defence in depth: the engine validates first, but this repository never trusts its caller's types or sizes.
-      const CAPS = { name: 100, phone: 20, email: 254, zip: 10, issueText: 2000, summary: 2000 };
+      const CAPS = { name: 100, phone: 20, email: 254, zip: 10, addressLine1: 160, addressLine2: 100, city: 100, state: 2, issueText: 2000, summary: 2000 };
       for (const [k, max] of Object.entries(CAPS)) {
         const v = patch[k];
         if (v !== undefined && v !== null && (typeof v !== "string" || v.length > max)) throw new DbError("invalid_data", `invalid ${k}`);
       }
-      for (const k of ["name", "phone", "email", "zip"]) if (typeof patch[k] === "string" && /[\u0000-\u001f\u007f]/.test(patch[k])) throw new DbError("invalid_data", `invalid ${k}`);
+      for (const k of ["name", "phone", "email", "zip", "addressLine1", "addressLine2", "city", "state"]) if (typeof patch[k] === "string" && /[\u0000-\u001f\u007f]/.test(patch[k])) throw new DbError("invalid_data", `invalid ${k}`);
       if (typeof patch.email === "string" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(patch.email)) throw new DbError("invalid_data", "invalid email");
+      if (patch.state !== undefined && patch.state !== null && !/^[A-Z]{2}$/.test(patch.state)) throw new DbError("invalid_data", "invalid state");
       if (patch.urgency !== undefined && patch.urgency !== null && !["now", "can_wait"].includes(patch.urgency)) throw new DbError("invalid_data", "invalid urgency");
       if (patch.emergencyCategories !== undefined && (!Array.isArray(patch.emergencyCategories) || patch.emergencyCategories.length > 20 || patch.emergencyCategories.some((c) => typeof c !== "string" || !/^[a-z][a-z0-9_]{0,59}$/.test(c)))) throw new DbError("invalid_data", "invalid emergencyCategories");
       return guard(async () => {
@@ -213,7 +215,7 @@ export function forBusiness(db, businessId) {
             sets.push(`${col} = ?`); params.push(val); changed.push(col); expect[col] = val;
             if (["name", "phone", "email", "zip"].includes(col) && cur[col] != null) previous[col] = cur[col]; // an overwritten customer detail is never lost silently
           };
-          for (const col of ["name", "phone", "email", "zip", "urgency"]) if (patch[col] !== undefined) setCol(col, patch[col]);
+          for (const col of ["name", "phone", "email", "zip", "addressLine1", "addressLine2", "city", "state", "urgency"]) if (patch[col] !== undefined) setCol(({ addressLine1: "address_line1", addressLine2: "address_line2", city: "city", state: "state" })[col] ?? col, patch[col]);
           if (typeof patch.issueText === "string" && patch.issueText.trim()) setCol("issue_text", patch.issueText);
           if (typeof patch.summary === "string") setCol("summary", patch.summary);
           if ("zipInVerifiedArea" in patch) setCol("zip_in_verified_area", patch.zipInVerifiedArea ? "yes" : "unconfirmed");
@@ -255,7 +257,7 @@ export function forBusiness(db, businessId) {
 
     async list({ limit = 50 } = {}) {
       return guard(async () => (await db.all(
-        `SELECT id, name, phone, email, zip, issue_category, urgency, emergency, status, duplicate_count, created_at, ${CONTACT_MISSING} FROM leads WHERE business_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?`,
+        `SELECT id, name, phone, email, zip, address_line1, address_line2, city, state, issue_category, urgency, emergency, status, duplicate_count, created_at, ${CONTACT_MISSING} FROM leads WHERE business_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?`,
         [B, Math.min(Math.max(1, limit | 0), 200)])).map((r) => ({ ...r, contact_missing: !!r.contact_missing })));
     },
     async count() {
