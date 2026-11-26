@@ -8,7 +8,7 @@ import { AIRouter } from "../src/ai/router.js";
 import { MockProvider } from "../src/ai/mock.js";
 import { handleMessage, MAX_MESSAGES_PER_CONVERSATION } from "../src/engine/engine.js";
 import { guardAiReply } from "../src/engine/guard.js";
-import { extractContact, extractName, extractUrgency } from "../src/engine/extract.js";
+import { extractContact, extractServiceAddress, extractName, extractUrgency } from "../src/engine/extract.js";
 
 const V = { verified: true, verifiedBy: "owner", verifiedAt: "2026-11-01" };
 const kbDoc = (id, name, extra = {}) => ({
@@ -106,6 +106,21 @@ describe("happy path lead capture", () => {
     assert.equal(r.leadStatus, "saved");
     assert.equal((await A.leads.list())[0].name, "John Smith");
   });
+  test("persists customer-provided service address parts with the lead", async () => {
+    const { deps, A } = await setup();
+    let r = await handleMessage(deps("acme-plumbing"), { message: "my toilet is leaking, service address is 123 Main St, Apt 4, Bronx, NY 10467" });
+    const id = r.conversationId;
+    r = await handleMessage(deps("acme-plumbing"), { message: "Jane Doe", conversationId: id });
+    r = await handleMessage(deps("acme-plumbing"), { message: "512-555-0142", conversationId: id });
+    r = await handleMessage(deps("acme-plumbing"), { message: "it can wait", conversationId: id });
+    assert.equal(r.leadStatus, "saved");
+    const lead = (await A.leads.list())[0];
+    assert.equal(lead.address_line1, "123 Main St");
+    assert.equal(lead.address_line2, "Apt 4");
+    assert.equal(lead.city, "Bronx");
+    assert.equal(lead.state, "NY");
+    assert.equal(lead.zip, "10467");
+  });
   test("ZIP outside the verified list is stored as unconfirmed, not refused", async () => {
     const { deps, A } = await setup();
     const { r } = await fullLead(deps("acme-plumbing"), { zip: "90210" });
@@ -155,6 +170,16 @@ describe("validation inside the conversation", () => {
 });
 
 describe("extractors", () => {
+  test("extracts an explicitly supplied structured service address", () => {
+    assert.deepEqual(extractServiceAddress("service address is 123 Main St, Apt 4, Bronx, NY 10467"), {
+      addressLine1: "123 Main St", addressLine2: "Apt 4", city: "Bronx", state: "NY",
+    });
+    assert.deepEqual(extractServiceAddress("my sink is leaking near the kitchen"), {});
+    assert.deepEqual(extractServiceAddress("123 Main St, Bronx, NY 10467"), {});
+    assert.deepEqual(extractServiceAddress("123 Main St, Bronx, NY 10467", { allowBare: true }), {
+      addressLine1: "123 Main St", city: "Bronx", state: "NY",
+    });
+  });
   test("extractContact returns only valid values", () => {
     assert.deepEqual(extractContact("call 512-555-0142 or a@b.com zip 62701"), { email: "a@b.com", phone: "+15125550142", zip: "62701" });
     assert.deepEqual(extractContact("call 000-000-0000"), {});
