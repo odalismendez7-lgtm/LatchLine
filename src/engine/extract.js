@@ -23,7 +23,7 @@ export function spokenDigitsToDigits(text) {
 // Parse only an explicitly introduced property address. Ambiguous free text is left untouched.
 export function extractServiceAddress(rawText) {
   const raw = String(rawText ?? "").normalize("NFC").trim();
-  const match = /(?:property|service|street|home|house|job)?\\s*(?:address is|address:|at)\\s+(.+)$/i.exec(raw);
+  const match = /(?:service |property )?address(?: is|:)\\s*(.+)$/i.exec(raw);
   if (!match) return {};
   let value = match[1].replace(/[.!?]+$/, "").trim();
   if (value.length < 5 || value.length > 360 || /[<>\\r\\n]/.test(value)) return {};
@@ -33,7 +33,7 @@ export function extractServiceAddress(rawText) {
   if (!/^(?:\\d{1,6}\\s+|P\\.?O\\.?\\s+Box\\s+)[\\p{L}\\p{M}\\d .#'’/-]{2,150}$/iu.test(street)) return {};
   const out = { addressLine1: street.slice(0, 160) };
   let rest = parts.slice(1);
-  if (rest.length && /^(?:apt|apartment|unit|suite|ste|#)\\b?/i.test(rest[0])) {
+  if (rest.length && /^(?:apt|apartment|unit|suite|ste|#)(?:\\s|$)/i.test(rest[0])) {
     if (rest[0].length <= 100) out.addressLine2 = rest.shift();
   }
   if (rest.length >= 2) {
