@@ -24,10 +24,10 @@ async function setup(appOpts = {}) {
   const app = createApp({ db, store: new MemoryStore(), salt: "test-salt-123", router: new AIRouter({ providers: [new MockProvider()], retries: 0 }), ...appOpts });
   return { db, app };
 }
-const post = (app, body, { origin = A_ORIGIN, ip = "203.0.113.5", raw } = {}) =>
+const post = (app, body, { origin = A_ORIGIN, ip = "203.0.113.5", raw, idempotencyKey } = {}) =>
   app.fetch(new Request("https://api.test/api/chat", {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...(origin ? { Origin: origin } : {}), "CF-Connecting-IP": ip },
+    headers: { "Content-Type": "application/json", ...(origin ? { Origin: origin } : {}), "CF-Connecting-IP": ip, ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}) },
     body: raw ?? JSON.stringify(body),
   }));
 
@@ -235,5 +235,34 @@ describe("end-to-end through HTTP handler", () => {
     assert.equal(last.persisted, true);
     const row = await db.first("SELECT name, phone, zip FROM leads");
     assert.deepEqual({ ...row }, { name: "Jane Doe", phone: "+15125550142", zip: "62701" });
+  });
+});
+
+describe("chat request idempotency", () => {
+  test("completed retries replay the original response without creating another conversation", async () => {
+    const { app, db } = await setup();
+    const body = { message: "my kitchen faucet keeps dripping", siteKey: KEY_A };
+    const first = await post(app, body, { idempotencyKey: "retry-key-0001" });
+    assert.equal(first.status, 200);
+    const original = await first.json();
+    const retry = await post(app, body, { idempotencyKey: "retry-key-0001" });
+    assert.equal(retry.status, 200);
+    assert.deepEqual(await retry.json(), original);
+    assert.equal((await db.first("SELECT COUNT(*) n FROM conversations")).n, 1);
+    assert.equal((await db.first("SELECT COUNT(*) n FROM chat_request_dedup")).n, 1);
+  });
+  test("keys are tenant-scoped", async () => {
+    const { app, db } = await setup();
+    await post(app, { message: "my sink is leaking", siteKey: KEY_A }, { idempotencyKey: "tenant-key-0001" });
+    await post(app, { message: "my sink is leaking", siteKey: KEY_B }, { origin: B_ORIGIN, idempotencyKey: "tenant-key-0001" });
+    assert.equal((await db.first("SELECT COUNT(*) n FROM chat_request_dedup")).n, 2);
+    assert.equal((await db.first("SELECT COUNT(*) n FROM conversations")).n, 2);
+  });
+  test("malformed idempotency keys are rejected", async () => {
+    const { app } = await setup();
+    for (const key of ["short", "contains spaces!", "x".repeat(129)]) {
+      const res = await post(app, { message: "hi", siteKey: KEY_A }, { idempotencyKey: key });
+      assert.equal(res.status, 400);
+    }
   });
 });
