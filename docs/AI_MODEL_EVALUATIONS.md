@@ -102,3 +102,4 @@ Required before any real customer data:
 - Measure actual input/output tokens, latency, timeouts, refusals and estimated cost.
 - Review OpenAI's current API data controls, retention, terms and customer disclosure.
 - Keep the mock as a rollback path and disable live AI automatically on configuration failure.
+\n\n## Cloudflare Workers AI candidate (2026-11-26)\n\nAn opt-in Cloudflare Workers AI binding adapter now exists at `src/ai/workers-ai.js`. Initial evaluation candidate: `@cf/google/gemma-4-26b-a4b-it`. Cloudflare currently lists a 10,000-Neuron daily free allocation on Workers Free; usage beyond that requires Workers Paid and may incur charges. The adapter tests use a mocked binding only. No real inference, quality evaluation, or customer-data processing has occurred. See `WORKERS_AI_SETUP.md`.\n
