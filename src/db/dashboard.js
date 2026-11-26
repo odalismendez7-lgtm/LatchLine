@@ -40,7 +40,7 @@ export function dashboardRepo(db, B) {
             // The caller may not see phone/email, which customers also type into free text. Searching that text (even by
             // letters) lets them confirm or rebuild a hidden value piece by piece through the result count, so they
             // can search name and ZIP only.
-            where.push("(name LIKE ? ESCAPE '\\' OR zip LIKE ? ESCAPE '\\' OR address_line1 LIKE ? ESCAPE '\\' OR city LIKE ? ESCAPE '\\')"); p.push(l, l, l, l);
+            where.push("(name LIKE ? ESCAPE '\\' OR zip LIKE ? ESCAPE '\\')"); p.push(l, l);
           } else { where.push("(name LIKE ? ESCAPE '\\' OR issue_text LIKE ? ESCAPE '\\' OR zip LIKE ? ESCAPE '\\' OR address_line1 LIKE ? ESCAPE '\\' OR city LIKE ? ESCAPE '\\')"); p.push(l, l, l, l, l); }
         }
         const lim = clamp(limit, 1, 100, 25), off = clamp(offset, 0, 100000, 0);
