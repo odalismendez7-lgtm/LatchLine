@@ -11,5 +11,5 @@ crons = ["*/5 * * * *"]
 # Workers AI binding is available but NOT enabled as the provider unless
 # LATCHLINE_AI_PROVIDER="workers-ai" is explicitly set in Worker vars.
 # The default provider remains the mock; no inference is run by this binding alone.
-[[ai]]
+[ai]
 binding = "AI"
