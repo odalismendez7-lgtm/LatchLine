@@ -542,9 +542,12 @@ describe("Stage 7B review findings (each failed before its fix)", { skip }, () =
   });
   test("focus is not pulled back to the message box if the keyboard user moved elsewhere while waiting", async () => {
     const b = await biz(); const { ctx, page } = await open(b); await openChat(page);
-    await page.route("**/api/chat", async (r) => { await new Promise((x) => setTimeout(x, 600)); r.continue(); });
+    let releaseResponse;
+    const responseGate = new Promise((resolve) => { releaseResponse = resolve; });
+    await page.route("**/api/chat", async (r) => { await responseGate; r.continue(); });
     await say(page, "hello there"); await page.locator(".typing.on").waitFor();
     const focusedNewChat = await inShadow(page, (r) => { const button = r.querySelector("header button"); button.focus(); return r.activeElement === button; });
+    releaseResponse(); // keep the reply pending until after the keyboard user has moved focus
     assert.equal(focusedNewChat, true, "the New chat button must receive focus before the reply arrives");
     await replied(page, 2); await page.waitForTimeout(200);
     assert.equal(await inShadow(page, (r) => r.activeElement?.textContent), "New chat");
