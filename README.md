@@ -10,7 +10,7 @@ LATCHLINE is an AI customer operations platform for service businesses, starting
 
 ## Project records
 
-All requirements, pricing, architecture, security, test results, and known problems live in [`docs/`](docs/README.md). Start with [`docs/PRODUCT_REQUIREMENTS.md`](docs/PRODUCT_REQUIREMENTS.md).
+All requirements, pricing, architecture, security, test results, and known problems live in [`docs/`](docs/README.md). Start with [`docs/PRODUCT_REQUIREMENTS.md`](docs/PRODUCT_REQUIREMENTS.md). The opt-in OpenAI adapter setup and its privacy gates are documented in [`docs/OPENAI_SETUP.md`](docs/OPENAI_SETUP.md).
 
 ## Run the tests
 
