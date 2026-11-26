@@ -159,7 +159,7 @@ export function createDashboardApi({ db, auth, mailer, now = Date.now, devMode =
         case "GET leads/export.csv": {
           const rows = await T.dashboard.exportLeads();
           await T.dashboard.recordExport(actor, rows.length);
-          const cols = ["id", "created_at", "status", "emergency", "name", "phone", "email", "zip", "issue_category", "issue_text", "urgency", "preferred_contact", "preferred_time", "summary", "contact_missing"];
+          const cols = ["id", "created_at", "status", "emergency", "name", "phone", "email", "zip", "address_line1", "address_line2", "city", "state", "issue_category", "issue_text", "urgency", "preferred_contact", "preferred_time", "summary", "contact_missing"];
           const csv = [cols.map(csvCell).join(","), ...rows.map((r) => cols.map((c) => csvCell(r[c])).join(","))].join("\r\n");
           return new Response(csv, { status: 200, headers: { ...H, "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": 'attachment; filename="leads.csv"' } });
         }
