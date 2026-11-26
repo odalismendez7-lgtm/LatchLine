@@ -53,7 +53,7 @@ const WHY_ES = {
 /** Conservative language hint for deterministic lead-collection prompts; not a general language detector. */
 export function isSpanishMessage(message) {
   const t = String(message ?? "").normalize("NFC").toLowerCase();
-  return /[¿¡ñáéíóúü]/.test(t) || /\\b(?:hola|buenas|gracias|necesito|tengo|fuga|plomer[ií]a|inodoro|agua|cocina|baño|bano|puede|favor|por favor|ahora|urgente|nombre|apellido|tel[eé]fono|c[oó]digo postal|esperar|omitir|soy|me llamo)\\b/.test(t);
+  return /[¿¡ñáéíóúü]/.test(t) || /\b(?:hola|buenas|gracias|necesito|tengo|fuga|plomer[ií]a|inodoro|agua|cocina|baño|bano|puede|favor|por favor|ahora|urgente|nombre|apellido|tel[eé]fono|c[oó]digo postal|esperar|omitir|soy|me llamo)\b/.test(t);
 }
 export const promptsFor = (message) => isSpanishMessage(message) ? PROMPTS_ES : PROMPTS;
 export const retriesFor = (message) => isSpanishMessage(message) ? RETRY_ES : RETRY;
