@@ -30,14 +30,17 @@ export function extractServiceAddress(rawText, { allowBare = false } = {}) {
   let value = match[1].replace(/[.!?]+$/, "").trim().replace(/\s+/g, " ");
   if (value.length < 5 || value.length > 360 || /[<>\r\n]/.test(value)) return {};
   const parts = value.split(",").map((part) => part.trim()).filter(Boolean);
-  const street = parts[0] ?? "";
+  let street = parts[0] ?? "";
+  let inlineUnit = null;
+  const unitMatch = /^(.*?\S)\s+(apt|apartment|unit|suite|ste|#)\s*#?\s*([A-Za-z0-9-]+)$/i.exec(street);
+  if (unitMatch) { street = unitMatch[1]; inlineUnit = `${unitMatch[2]} ${unitMatch[3]}`; }
   if (!/^(?:\d{1,6}\s+|P\.?O\.?\s+Box\s+)[\p{L}\p{M}\d .#'’/-]{2,150}$/iu.test(street)) return {};
   const out = { addressLine1: street.slice(0, 160) };
   const rest = parts.slice(1);
-  if (rest.length && /^(?:apt|apartment|unit|suite|ste|#)(?:\s|$)/i.test(rest[0])) {
-    if (rest[0].length <= 100) out.addressLine2 = rest[0];
-  }
-  const locality = rest.filter((part) => !/^(?:apt|apartment|unit|suite|ste|#)(?:\s|$)/i.test(part));
+  const isUnit = (part) => /^(?:apt|apartment|unit|suite|ste)\b|^#\s*\S+/i.test(part);
+  if (inlineUnit) out.addressLine2 = inlineUnit.slice(0, 100);
+  else if (rest.length && isUnit(rest[0]) && rest[0].length <= 100) out.addressLine2 = rest[0];
+  const locality = rest.filter((part) => !isUnit(part));
   if (locality.length >= 2) {
     const state = /^([A-Za-z]{2})(?:\s+\d{5}(?:-\d{4})?)?$/.exec(locality[locality.length - 1]);
     const city = locality[locality.length - 2];
