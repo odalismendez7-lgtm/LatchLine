@@ -32,7 +32,7 @@ import { forBusiness } from "../db/tenant.js";
 import { VARIANTS, MAX_CONTACT_REVISIONS } from "../db/notifications.js";
 import { wantsHuman } from "./handoff.js";
 import { analyze, fingerprint } from "./signals.js";
-import { pick, PROMPTS, RETRY, WHY, SAY } from "./phrases.js";
+import { pick, promptsFor, retriesFor, whyFor, SAY } from "./phrases.js";
 
 export const MAX_MESSAGES_PER_CONVERSATION = 60;
 const HISTORY_TURNS = 4;
@@ -552,7 +552,7 @@ export async function handleMessage(deps, input) {
       else if (sig.identity) { notes.push(SAY.identity); handledBody = true; }
       else if (sig.summaryAsk || (sig.alreadyTold && !sig.confusion)) {
         notes.push(summaryText(state, { stageDone: false })); handledBody = true;
-      } else if (sig.whyAsked && aw && WHY[aw]) { notes.push(WHY[aw]); handledBody = true; }
+      } else if (sig.whyAsked && aw && whyFor(message)[aw]) { notes.push(WHY[aw]); handledBody = true; }
       else if (sig.confusion) { notes.push(pick(state, "confusion", SAY.confusionGeneric)); handledBody = true; }
       else if (sig.actionAsk) {
         const key = sig.change ? "changeNote" : sig.booking ? "bookingNote" : sig.dispatch ? "dispatchNote" : "statusBefore";
@@ -633,7 +633,7 @@ export async function handleMessage(deps, input) {
       else if (!pendingOfferNow) {
         if (next !== aw && !retried) state.asked[next] = (state.asked[next] ?? 0) + 1;
         state.awaiting = next;
-        parts.push(retried && attempt ? pick(state, `retry_${retried}`, RETRY[retried]) : pick(state, `ask_${next}`, PROMPTS[next]));
+        parts.push(retried && attempt ? pick(state, `retry_${retried}`, retriesFor(message)[retried]) : pick(state, `ask_${next}`, promptsFor(message)[next]));
       } else {
         state.awaiting = next; // the yes/no question is the one being asked now
       }
