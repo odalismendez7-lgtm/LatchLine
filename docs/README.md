@@ -14,7 +14,7 @@ These are the permanent project records. Keep them current: **whenever a decisio
 | `WIDGET_AUDIT_7B.md` | Stage 7B adversarial audit: confirmed defects, fixes, independent review, unresolved risks |
 | `CONVERSATION_EVAL.md` | Reproducible conversation-quality evaluation: method, scope, measured results |
 | `AI_STRATEGY.md` | How the AI is designed to be accurate, safe, and swappable |
-| `AI_MODEL_EVALUATIONS.md` | Record of models tested and decisions |
+| `AI_MODEL_EVALUATIONS.md` | Record of models tested and decisions |\n| `OPENAI_SETUP.md` | Opt-in OpenAI Responses API configuration, cost/privacy gates, and test status |\n| `RESEND_SETUP.md` | Opt-in transactional email setup, idempotency, delivery status, and privacy gates |
 | `ARCHITECTURE.md` | System design and principles |
 | `SECURITY.md` | Security requirements and verification |
 | `RELIABILITY.md` | Availability, failure handling, recovery |
