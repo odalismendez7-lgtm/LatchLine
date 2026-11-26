@@ -41,6 +41,27 @@ async function fullLead(deps, { phone = "512-555-0142", name = "Jane Doe", zip =
   return { r, id };
 }
 
+
+describe("Spanish deterministic lead prompts", () => {
+  test("asks for the next lead detail in Spanish after a Spanish plumbing inquiry", async () => {
+    const { deps } = await setup();
+    const r = await handleMessage(deps("acme-plumbing"), { message: "Necesito ayuda con una fuga de agua en mi cocina" });
+    assert.equal(r.ok, true);
+    assert.match(r.reply, /nombre y apellido/i);
+    assert.doesNotMatch(r.reply, /first and last name/i);
+  });
+
+  test("uses Spanish retry wording for an invalid phone number", async () => {
+    const { deps } = await setup();
+    let r = await handleMessage(deps("acme-plumbing"), { message: "Tengo una fuga de agua en la cocina" });
+    const id = r.conversationId;
+    r = await handleMessage(deps("acme-plumbing"), { message: "Juan Pérez", conversationId: id });
+    r = await handleMessage(deps("acme-plumbing"), { message: "123", conversationId: id });
+    assert.match(r.reply, /teléfono válido/i);
+    assert.doesNotMatch(r.reply, /valid US phone number/i);
+  });
+});
+
 describe("input validation", () => {
   test("rejects empty, whitespace, non-string, and oversize messages", async () => {
     const { deps } = await setup();
