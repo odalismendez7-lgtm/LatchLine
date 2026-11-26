@@ -54,7 +54,7 @@ export class ResendEmailProvider {
       try { payload = await response.json(); } catch { throw new NotifyError("invalid_response", "Email provider returned an unreadable status.", { retryable: true }); }
       const event = payload?.last_event;
       if (event === "delivered" || event === "opened" || event === "clicked") return { status: "delivered" };
-      if (event === "bounced" || event === "suppressed" || event === "failed") return { status: "failed", code: event };
+      if (event === "bounced" || event === "complained" || event === "suppressed" || event === "failed" || event === "canceled") return { status: "failed", code: event };
       // Sent, queued, scheduled, and delivery_delayed are not delivery confirmation.
       return { status: "pending" };
     } finally {
