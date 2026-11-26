@@ -138,14 +138,14 @@ function main() {
         if (Array.isArray(raw.msgs)) {
           for (const m of raw.msgs.slice(-MAX_STORED)) {
             if (!m || !["customer", "assistant", "system"].includes(m.role) || typeof m.text !== "string") continue;
-            S.msgs.push({ id: ++S.seq, role: m.role, text: m.text.slice(0, m.role === "customer" ? MAX_MESSAGE_CHARS : 4000), urgent: m.urgent === true, note: typeof m.note === "string" ? m.note.slice(0, 200) : undefined, status: m.role === "customer" ? (m.status === "sent" ? "sent" : "unconfirmed") : undefined, bad: m.bad === true });
+            S.msgs.push({ id: ++S.seq, role: m.role, text: m.text.slice(0, m.role === "customer" ? MAX_MESSAGE_CHARS : 4000), urgent: m.urgent === true, note: typeof m.note === "string" ? m.note.slice(0, 200) : undefined, status: m.role === "customer" ? (m.status === "sent" ? "sent" : "unconfirmed") : undefined, bad: m.bad === true, idempotencyKey: m.role === "customer" && typeof m.idempotencyKey === "string" && /^[a-f0-9]{32}$/.test(m.idempotencyKey) ? m.idempotencyKey : undefined });
           }
         }
       } catch { /* storage unavailable */ }
     },
     save() {
       try {
-        const msgs = S.msgs.filter((m) => !m.transient).slice(-MAX_STORED).map((m) => ({ role: m.role, text: m.text, urgent: m.urgent, status: m.status, bad: m.bad, note: m.note }));
+        const msgs = S.msgs.filter((m) => !m.transient).slice(-MAX_STORED).map((m) => ({ role: m.role, text: m.text, urgent: m.urgent, status: m.status, bad: m.bad, note: m.note, idempotencyKey: m.idempotencyKey }));
         sessionStorage.setItem(storeKey, JSON.stringify({ ts: Date.now(), cid: S.cid, msgs }));
       } catch { /* ignore */ }
     },
@@ -231,6 +231,16 @@ function main() {
     if (nearBottom || S.busy) els.log.scrollTop = els.log.scrollHeight;
   }
   const add = (m) => { m.id = ++S.seq; S.msgs.push(m); return m; };
+  function newIdempotencyKey() {
+    try {
+      const bytes = new Uint8Array(16);
+      crypto.getRandomValues(bytes);
+      return [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+    } catch {
+      // A deduplication token, not an authentication credential.
+      return `ll${Date.now().toString(16)}${S.seq.toString(16)}${Math.random().toString(16).slice(2)}`.slice(0, 64);
+    }
+  }
   const announce = (t) => { els.status.textContent = ""; setTimeout(() => { els.status.textContent = t; }, 30); };
 
   // ---- open / close / focus ----
@@ -297,13 +307,14 @@ function main() {
     let m = retry;
     if (m) { S.msgs = S.msgs.filter((x) => x.related !== m.id); m.status = "sending"; }
     else m = add({ role: "customer", text: norm.value, status: "sending" });
+    if (!m.idempotencyKey) m.idempotencyKey = newIdempotencyKey();
     S.busy = true; render(); announce(`${display()} is typing`);
     const gen = S.gen, ctl = new AbortController(); S.ctl = ctl;
     const timer = setTimeout(() => ctl.abort(), REQUEST_TIMEOUT_MS);
     try {
       let res;
       try {
-        res = await fetch(`${api}/api/chat`, { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "omit", signal: ctl.signal, body: JSON.stringify({ siteKey, message: norm.value, conversationId: S.cid }) });
+        res = await fetch(`${api}/api/chat`, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": m.idempotencyKey }, credentials: "omit", signal: ctl.signal, body: JSON.stringify({ siteKey, message: norm.value, conversationId: S.cid }) });
       } catch { if (gen === S.gen) failure(m, "unconfirmed", T.network); return; }
       let data = null;
       try { data = await res.json(); } catch { /* handled below */ }
