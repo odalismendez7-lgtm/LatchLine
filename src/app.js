@@ -168,7 +168,7 @@ export function createApp({ db, router = null, store, salt, clientLimit = { limi
         if (url.pathname === "/health" && request.method === "GET") {
           let databaseConnected = false;
           try { databaseConnected = (await platform.ping()) === true; } catch { databaseConnected = false; }
-          return json({ ok: databaseConnected, service: "LATCHLINE API", mode, realAIConnected: mode === "live-ai", databaseConnected, note: mode === "live-ai" ? "Live AI configured; other production gates may remain." : "Mock AI only. Not production-ready." }, databaseConnected ? 200 : 503, (await originKnown(origin)) ? origin : "");
+          return json({ ok: databaseConnected, service: "LATCHLINE API", mode, realAIConfigured: mode === "live-ai", realAIConnected: false, databaseConnected, note: mode === "live-ai" ? "Live AI configured; other production gates may remain." : "Mock AI only. Not production-ready." }, databaseConnected ? 200 : 503, (await originKnown(origin)) ? origin : "");
         }
 
         if (url.pathname === "/api/chat" && request.method === "POST") {
