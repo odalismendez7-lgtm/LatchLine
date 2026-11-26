@@ -26,7 +26,7 @@ describe("wrangler d1 migrations apply --local (the real migration tool)", { ski
   test("applies all six migrations to an empty local D1, and a second run is a clean no-op", () => {
     const first = applyMigrations({ persist, config: PROBE });
     assert.equal(first.status, 0, first.output);
-    for (const f of ["0001_init.sql", "0002_notifications.sql", "0003_accounts.sql", "0004_simulated_mail.sql", "0005_notification_variant.sql"]) assert.match(first.output, new RegExp(f.replace(".", "\\.")));
+    for (const f of ["0001_init.sql", "0002_notifications.sql", "0003_accounts.sql", "0004_simulated_mail.sql", "0005_notification_variant.sql", "0006_chat_request_dedup.sql"]) assert.match(first.output, new RegExp(f.replace(".", "\\.")));
     const second = applyMigrations({ persist, config: PROBE });
     assert.equal(second.status, 0, second.output);
     assert.match(second.output, /No migrations to apply/i);
