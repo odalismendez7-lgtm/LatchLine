@@ -219,6 +219,7 @@ describe("CORS", () => {
     const res = await post(app, { message: "hi", siteKey: KEY_A });
     assert.equal(res.headers.get("Cache-Control"), "no-store");
     assert.equal(res.headers.get("X-Content-Type-Options"), "nosniff");
+    assert.match(res.headers.get("Access-Control-Allow-Headers") || "", /Idempotency-Key/i);
   });
 });
 
