@@ -180,6 +180,23 @@ describe("conversation through the real backend", { skip }, () => {
     assert.equal(chats().at(-1).body.conversationId, cid);
     await ctx.close();
   });
+  test("recovery: an interrupted in-flight request restores its idempotency key for a safe retry", async () => {
+    const b = await biz(); const { ctx, page, chats } = await open(b); await openChat(page);
+    await page.route("**/api/chat", (r) => r.abort());
+    await say(page, "my kitchen sink is leaking");
+    await waitFor(page, () => document.querySelector("#latchline-widget-root").shadowRoot.querySelector(".retry"));
+    const firstKey = chats()[0]?.idempotencyKey;
+    assert.match(firstKey, /^[a-f0-9]{32}$/);
+    await page.reload(); await openChat(page);
+    await waitFor(page, () => document.querySelector("#latchline-widget-root").shadowRoot.querySelector(".retry"));
+    await page.unroute("**/api/chat");
+    await page.getByRole("button", { name: "Try again" }).click();
+    await replied(page, 2);
+    assert.equal(chats().length, 2);
+    assert.equal(chats()[1].idempotencyKey, firstKey);
+    assert.equal(await page.locator(".m.customer").count(), 1);
+    await ctx.close();
+  });
   test("recovery: when the server no longer has the conversation, the customer is told it is a new one", async () => {
     const b = await biz(); const { ctx, page } = await open(b); await openChat(page);
     await say(page, "my water heater is leaking"); await replied(page, 2);
