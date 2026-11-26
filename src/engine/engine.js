@@ -552,7 +552,7 @@ export async function handleMessage(deps, input) {
       else if (sig.identity) { notes.push(SAY.identity); handledBody = true; }
       else if (sig.summaryAsk || (sig.alreadyTold && !sig.confusion)) {
         notes.push(summaryText(state, { stageDone: false })); handledBody = true;
-      } else if (sig.whyAsked && aw && whyFor(message)[aw]) { notes.push(WHY[aw]); handledBody = true; }
+      } else if (sig.whyAsked && aw && whyFor([message, ...state.history.filter((h) => h.role === "user").map((h) => h.content)].join(" "))[aw]) { notes.push(WHY[aw]); handledBody = true; }
       else if (sig.confusion) { notes.push(pick(state, "confusion", SAY.confusionGeneric)); handledBody = true; }
       else if (sig.actionAsk) {
         const key = sig.change ? "changeNote" : sig.booking ? "bookingNote" : sig.dispatch ? "dispatchNote" : "statusBefore";
@@ -633,7 +633,7 @@ export async function handleMessage(deps, input) {
       else if (!pendingOfferNow) {
         if (next !== aw && !retried) state.asked[next] = (state.asked[next] ?? 0) + 1;
         state.awaiting = next;
-        parts.push(retried && attempt ? pick(state, `retry_${retried}`, retriesFor(message)[retried]) : pick(state, `ask_${next}`, promptsFor(message)[next]));
+        parts.push(retried && attempt ? pick(state, `retry_${retried}`, retriesFor([message, ...state.history.filter((h) => h.role === "user").map((h) => h.content)].join(" "))[retried]) : pick(state, `ask_${next}`, promptsFor([message, ...state.history.filter((h) => h.role === "user").map((h) => h.content)].join(" "))[next]));
       } else {
         state.awaiting = next; // the yes/no question is the one being asked now
       }
