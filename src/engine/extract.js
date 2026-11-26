@@ -20,6 +20,35 @@ export function spokenDigitsToDigits(text) {
   });
 }
 
+// Parse only an explicitly introduced property address. Ambiguous free text is left untouched.
+export function extractServiceAddress(rawText) {
+  const raw = String(rawText ?? "").normalize("NFC").trim();
+  const match = /(?:property|service|street|home|house|job)?\\s*(?:address is|address:|at)\\s+(.+)$/i.exec(raw);
+  if (!match) return {};
+  let value = match[1].replace(/[.!?]+$/, "").trim();
+  if (value.length < 5 || value.length > 360 || /[<>\\r\\n]/.test(value)) return {};
+  value = value.replace(/\\s+/g, " ");
+  const parts = value.split(",").map((x) => x.trim()).filter(Boolean);
+  const street = parts[0] ?? "";
+  if (!/^(?:\\d{1,6}\\s+|P\\.?O\\.?\\s+Box\\s+)[\\p{L}\\p{M}\\d .#'’/-]{2,150}$/iu.test(street)) return {};
+  const out = { addressLine1: street.slice(0, 160) };
+  let rest = parts.slice(1);
+  if (rest.length && /^(?:apt|apartment|unit|suite|ste|#)\\b?/i.test(rest[0])) {
+    if (rest[0].length <= 100) out.addressLine2 = rest.shift();
+  }
+  if (rest.length >= 2) {
+    const state = /^([A-Za-z]{2})(?:\\s+\\d{5}(?:-\\d{4})?)?$/.exec(rest[rest.length - 1]);
+    if (state) {
+      const city = rest[rest.length - 2];
+      if (/^[\\p{L}][\\p{L} .'-]{1,98}$/u.test(city)) {
+        out.city = city.slice(0, 100);
+        out.state = state[1].toUpperCase();
+      }
+    }
+  }
+  return out;
+}
+
 export function extractContact(rawText) {
   const out = {};
   let rest = spokenDigitsToDigits(rawText);
