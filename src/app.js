@@ -92,7 +92,7 @@ export function createApp({ db, router = null, store, salt, clientLimit = { limi
       return {
         reply: `${composeSafetyReply(safety, { leadSystemConnected: false })}\n\n${NOT_SAVED[reason] ?? NOT_SAVED.unavailable}`,
         conversationId: null, urgent: true, leadStatus: "not_saved", persisted: false, rateLimited: reason === "rate", notSavedReason: reason,
-        degraded: { database: false, ai: false }, mode: "development",
+        degraded: { database: false, ai: false }, mode,
       };
     } catch { return null; }
   }
@@ -220,7 +220,7 @@ export function createApp({ db, router = null, store, salt, clientLimit = { limi
           return json({
             reply: result.reply, conversationId: result.conversationId, urgent: result.urgent,
             leadStatus: result.leadStatus, persisted: result.persisted, degraded: { database: result.degraded.database, ai: result.degraded.ai },
-            mode: "development", notice: "Development build: mock AI only, not production-ready.",
+            mode, notice: "Development build: mock AI only, not production-ready.",
           }, 200, origin);
           } catch (e) {
             // Anything unexpected (limiter store, database, engine): a person describing an emergency still gets the safety guidance.
