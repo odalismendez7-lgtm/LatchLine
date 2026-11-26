@@ -168,6 +168,27 @@ describe("Resend email adapter (HTTP mocked)", () => {
     await assert.rejects(() => provider.send(req({ channel: "sms", to: "+15125550100", subject: undefined })), (e) => e.code === "invalid_request");
   });
 
+  test("maps Resend email events to honest delivery states", async () => {
+    for (const [event, expected] of [["sent", "pending"], ["delivery_delayed", "pending"], ["queued", "pending"], ["delivered", "delivered"], ["opened", "delivered"], ["clicked", "delivered"], ["bounced", "failed"], ["suppressed", "failed"], ["failed", "failed"]]) {
+      let url;
+      const provider = new ResendEmailProvider({ apiKey: "x", from: "alerts@example.com", fetchImpl: async (u, init) => {
+        url = u; assert.equal(init.method, "GET");
+        return new Response(JSON.stringify({ id: "email_123", last_event: event }), { status: 200 });
+      } });
+      const result = await provider.getDeliveryStatus("email_123");
+      assert.equal(url, "https://api.resend.com/emails/email_123");
+      assert.equal(result.status, expected, event);
+      if (expected === "failed") assert.equal(result.code, event);
+    }
+  });
+
+  test("does not treat unknown status as delivered and validates provider message IDs", async () => {
+    const provider = new ResendEmailProvider({ apiKey: "x", from: "alerts@example.com", fetchImpl: async () =>
+      new Response(JSON.stringify({ last_event: "unknown_future_state" }), { status: 200 }) });
+    assert.deepEqual(await provider.getDeliveryStatus("email_123"), { status: "pending" });
+    await assert.rejects(() => provider.getDeliveryStatus("../other"), (e) => e.code === "invalid_request");
+  });
+
   test("maps authentication, sender verification, validation, rate limit and server errors safely", async () => {
     for (const [status, code, retryable] of [[401, "provider_auth", false], [403, "provider_auth", false], [422, "invalid_request", false], [429, "rate_limited", true], [503, "provider_unavailable", true]]) {
       const provider = new ResendEmailProvider({ apiKey: "x", from: "alerts@example.com", fetchImpl: async () => new Response("private provider detail", { status }) });
