@@ -552,7 +552,7 @@ export async function handleMessage(deps, input) {
       else if (sig.identity) { notes.push(SAY.identity); handledBody = true; }
       else if (sig.summaryAsk || (sig.alreadyTold && !sig.confusion)) {
         notes.push(summaryText(state, { stageDone: false })); handledBody = true;
-      } else if (sig.whyAsked && aw && whyFor([message, ...state.history.filter((h) => h.role === "user").map((h) => h.content)].join(" "))[aw]) { notes.push(WHY[aw]); handledBody = true; }
+      } else if (sig.whyAsked && aw) { const why = whyFor([message, ...state.history.filter((h) => h.role === "user").map((h) => h.content)].join(" ")); if (why[aw]) { notes.push(why[aw]); handledBody = true; } }
       else if (sig.confusion) { notes.push(pick(state, "confusion", SAY.confusionGeneric)); handledBody = true; }
       else if (sig.actionAsk) {
         const key = sig.change ? "changeNote" : sig.booking ? "bookingNote" : sig.dispatch ? "dispatchNote" : "statusBefore";
@@ -699,7 +699,7 @@ export async function handleMessage(deps, input) {
       const missing = neededSlots(state);
       const next = state.contactStuck ? (!hasContact(state.slots) && !state.leadId ? null : missing.find((k) => k !== "phone")) : missing[0];
       if (prefix) parts.push(prefix);
-      if (next) { state.awaiting = next; parts.push(pick(state, `ask_${next}`, PROMPTS[next])); }
+      if (next) { const prompts = promptsFor([message, ...state.history.filter((h) => h.role === "user").map((h) => h.content)].join(" ")); state.awaiting = next; parts.push(pick(state, `ask_${next}`, prompts[next])); }
       else parts.push(pick(state, "idle", ["I'm here. Tell me the plumbing problem, or ask me about the business.", "Whenever you're ready, tell me what's going on with your plumbing or ask a question about the business."]));
     }
   }
