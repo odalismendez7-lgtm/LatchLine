@@ -35,7 +35,7 @@ const PROMPTS_ES = {
   phone: ["¿Cuál es el mejor número de teléfono para contactarle?", "¿A qué número puede contactarle el equipo?"],
   zip: ["¿Cuál es el código postal de la propiedad?", "¿Me indica el código postal de la propiedad?"],
   address: ["¿Cuál es la dirección de la propiedad? Incluya apartamento o unidad si corresponde, o responda «omitir»."],
-  urgency:  urgency: ["¿Está pasando ahora mismo o puede esperar?", "¿Es urgente ahora mismo o puede esperar?"],
+  urgency: ["¿Está pasando ahora mismo o puede esperar?", "¿Es urgente ahora mismo o puede esperar?"],
 };
 const RETRY_ES = {
   issue: ["Necesito una breve descripción del problema. Por ejemplo: una fuga, una obstrucción o un inodoro que no deja de correr.", "Cuénteme brevemente qué está pasando. También puede pedir que una persona del negocio revise su solicitud."],
@@ -43,7 +43,7 @@ const RETRY_ES = {
   phone: ["Ese número no parece ser un teléfono válido de EE. UU. Envíe un número de 10 dígitos, por favor.", "No pude validar ese teléfono. Envíe 10 dígitos o, si prefiere, una dirección de correo electrónico."],
   zip: ["Envíe el código postal de servicio de 5 dígitos, por favor.", "Necesito un código postal de 5 dígitos. También puede responder «omitir»."],
   address: ["No pude identificar la dirección completa. Incluya la calle y apartamento o unidad si corresponde, o responda «omitir»."],
-  urgency:  urgency: ["¿Está pasando ahora mismo o puede esperar? Responda «ahora» o «puede esperar».", "Indique «ahora» si está pasando en este momento, o «puede esperar» si no es urgente."],
+  urgency: ["¿Está pasando ahora mismo o puede esperar? Responda «ahora» o «puede esperar».", "Indique «ahora» si está pasando en este momento, o «puede esperar» si no es urgente."],
 };
 const WHY_ES = {
   issue: "Lo pregunto para que el equipo del negocio sepa cuál es el problema.",
@@ -51,7 +51,7 @@ const WHY_ES = {
   phone: "Lo pregunto para que el equipo tenga cómo contactarle. No puedo prometer cuándo responderán.",
   zip: "Lo pregunto para que el equipo pueda revisar si la propiedad está dentro de su área de servicio. Puede omitirlo.",
   address: "Lo pregunto para que el equipo pueda identificar la propiedad. Puede omitirla.",
-  urgency:  urgency: "Lo pregunto para que el equipo sepa si el problema está ocurriendo ahora. Puede omitirlo.",
+  urgency: "Lo pregunto para que el equipo sepa si el problema está ocurriendo ahora. Puede omitirlo.",
 };
 
 /** Conservative language hint for deterministic lead-collection prompts; not a general language detector. */
@@ -74,7 +74,7 @@ export const RETRY = {
   ],
   zip: ["Please send your 5-digit service ZIP code.", "I still need a 5-digit ZIP code like 62701, or say \"skip\" to leave it out."],
   address: ["I couldn't identify the full street address. Include the street and apartment or unit if applicable, or say \"skip\"."],
-  urgency:  urgency: [
+  urgency: [
     "Is this happening right now, or can it wait? Please answer \"now\" or \"can wait\".",
     "Just reply \"now\" if it's happening right now, \"can wait\" if it isn't urgent, or \"skip\".",
   ],
@@ -91,7 +91,7 @@ export const WHY = {
   phone: "I ask so the team has a way to reach you about this request. I can't promise when they will respond.",
   zip: "I ask so the team can check whether the property is in the area the business serves. You can say \"skip\" to leave it out.",
   address: "I ask so the team can identify the property. You can skip it.",
-  urgency:  urgency: "I ask so the team can see whether this is happening right now. You can say \"skip\" to leave it out.",
+  urgency: "I ask so the team can see whether this is happening right now. You can say \"skip\" to leave it out.",
 };
 
 export const SAY = {
