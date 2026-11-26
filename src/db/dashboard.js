@@ -12,7 +12,7 @@ export function dashboardRepo(db, B) {
     sql: "INSERT INTO audit_log (id, business_id, actor, action, target, detail, created_at) VALUES (?,?,?,?,?,?,?)",
     params: [newId("aud"), B, actor, action, target ?? null, json(detail), nowIso()],
   });
-  const leadCols = `id, name, phone, email, zip, issue_category, issue_text, urgency, preferred_contact, preferred_time, emergency, status, duplicate_count, zip_in_verified_area, summary, created_at, updated_at, ${CONTACT_MISSING}`;
+  const leadCols = `id, name, phone, email, zip, address_line1, address_line2, city, state, issue_category, issue_text, urgency, preferred_contact, preferred_time, emergency, status, duplicate_count, zip_in_verified_area, summary, created_at, updated_at, ${CONTACT_MISSING}`;
 
   return Object.freeze({
     async overview() {
@@ -40,8 +40,8 @@ export function dashboardRepo(db, B) {
             // The caller may not see phone/email, which customers also type into free text. Searching that text (even by
             // letters) lets them confirm or rebuild a hidden value piece by piece through the result count, so they
             // can search name and ZIP only.
-            where.push("(name LIKE ? ESCAPE '\\' OR zip LIKE ? ESCAPE '\\')"); p.push(l, l);
-          } else { where.push("(name LIKE ? ESCAPE '\\' OR issue_text LIKE ? ESCAPE '\\' OR zip LIKE ? ESCAPE '\\')"); p.push(l, l, l); }
+            where.push("(name LIKE ? ESCAPE '\\' OR zip LIKE ? ESCAPE '\\' OR address_line1 LIKE ? ESCAPE '\\' OR city LIKE ? ESCAPE '\\')"); p.push(l, l, l, l);
+          } else { where.push("(name LIKE ? ESCAPE '\\' OR issue_text LIKE ? ESCAPE '\\' OR zip LIKE ? ESCAPE '\\' OR address_line1 LIKE ? ESCAPE '\\' OR city LIKE ? ESCAPE '\\')"); p.push(l, l, l, l, l); }
         }
         const lim = clamp(limit, 1, 100, 25), off = clamp(offset, 0, 100000, 0);
         const rows = await db.all(`SELECT ${leadCols} FROM leads WHERE ${where.join(" AND ")} ORDER BY emergency DESC, created_at DESC, rowid DESC LIMIT ? OFFSET ?`, [...p, lim, off]);
