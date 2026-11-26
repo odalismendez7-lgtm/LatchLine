@@ -23,10 +23,10 @@ describe("wrangler d1 migrations apply --local (the real migration tool)", { ski
   const persist = join(dir, "state");
   after(() => rmSync(dir, { recursive: true, force: true }));
 
-  test("applies all six migrations to an empty local D1, and a second run is a clean no-op", () => {
+  test("applies all seven migrations to an empty local D1, and a second run is a clean no-op", () => {
     const first = applyMigrations({ persist, config: PROBE });
     assert.equal(first.status, 0, first.output);
-    for (const f of ["0001_init.sql", "0002_notifications.sql", "0003_accounts.sql", "0004_simulated_mail.sql", "0005_notification_variant.sql", "0006_chat_request_dedup.sql"]) assert.match(first.output, new RegExp(f.replace(".", "\\.")));
+    for (const f of ["0001_init.sql", "0002_notifications.sql", "0003_accounts.sql", "0004_simulated_mail.sql", "0005_notification_variant.sql", "0006_chat_request_dedup.sql", "0007_chat_request_payload_hash.sql"]) assert.match(first.output, new RegExp(f.replace(".", "\\.")));
     const second = applyMigrations({ persist, config: PROBE });
     assert.equal(second.status, 0, second.output);
     assert.match(second.output, /No migrations to apply/i);
