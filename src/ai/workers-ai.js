@@ -30,7 +30,7 @@ export class WorkersAIProvider {
           { role: "system", content: request.system },
           ...request.messages.map((m) => ({ role: m.role, content: m.content })),
         ],
-        max_completion_tokens: Math.min(request.maxTokens ?? this.maxOutputTokens, this.maxOutputTokens),
+        max_tokens: Math.min(request.maxTokens ?? this.maxOutputTokens, this.maxOutputTokens),
         stream: false,
         chat_template_kwargs: { enable_thinking: false },
       }, { rejectIfBusy: true });
