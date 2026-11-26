@@ -9,6 +9,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: write
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -19,4 +22,17 @@ jobs:
           node-version: "22"
           cache: "npm"
       - run: npm ci
+      - name: Build and commit the generated widget bundle for same-repository pull requests
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        run: |
+          node scripts/build-widget.mjs
+          if git diff --quiet -- src/widget/widget.bundle.js; then
+            echo "Widget bundle is already current."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/widget/widget.bundle.js
+          git commit -m "Build widget bundle"
+          git push origin HEAD:${{ github.event.pull_request.head.ref }}
       - run: npm test
