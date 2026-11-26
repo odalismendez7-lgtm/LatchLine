@@ -51,7 +51,7 @@ const TEXT = {
   aiDown: "I can't look that up right now.",
 };
 
-const ORDER = ["issue", "name", "phone", "zip", "address", "urgency"];
+const ORDER = ["issue", "name", "phone", "zip", "urgency"]; // address is captured when volunteered; never blocks lead submission
 // In an emergency the way to reach the customer comes first (their name is the last thing that matters).
 const EMERGENCY_ORDER = ["issue", "phone", "zip", "name", "urgency"]; // emergencies never wait on an optional street address
 const orderFor = (state) => (state.emergency ? EMERGENCY_ORDER : ORDER);
