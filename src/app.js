@@ -224,12 +224,17 @@ export function createApp({ db, router = null, store, salt, clientLimit = { limi
           // The ledger is tenant-scoped and claimed atomically via INSERT OR IGNORE.
           const requestKey = request.headers.get("Idempotency-Key") || "";
           let dedupClaimed = false;
+          const conversationId = typeof body.conversationId === "string" ? body.conversationId.slice(0, 80) : null;
           if (requestKey) {
             if (!/^[A-Za-z0-9._:-]{8,128}$/.test(requestKey)) return json({ error: "Invalid idempotency key" }, 400, origin);
+            // A key identifies one exact logical request. Reusing it with edited content
+            // must not silently replay a response belonging to a different message.
+            const requestFingerprint = await hashKey(salt, "chat-request", JSON.stringify({ message: normalized.value, conversationId }));
             const t = new Date(now()).toISOString();
-            const claim = await db.run("INSERT OR IGNORE INTO chat_request_dedup (business_id, request_key, status, created_at, updated_at) VALUES (?,?, 'processing', ?, ?)", [business.id, requestKey, t, t]);
-            const record = await db.first("SELECT status, response_json FROM chat_request_dedup WHERE business_id = ? AND request_key = ?", [business.id, requestKey]);
+            const claim = await db.run("INSERT OR IGNORE INTO chat_request_dedup (business_id, request_key, payload_hash, status, created_at, updated_at) VALUES (?,?,?, 'processing', ?, ?)", [business.id, requestKey, requestFingerprint, t, t]);
+            const record = await db.first("SELECT status, payload_hash, response_json FROM chat_request_dedup WHERE business_id = ? AND request_key = ?", [business.id, requestKey]);
             if (!record) throw new Error("Dedup claim missing");
+            if (record.payload_hash !== requestFingerprint) return json({ error: "Idempotency key was already used for a different request", code: "idempotency_key_conflict" }, 409, origin);
             if (record.status === "completed" && record.response_json) return json(JSON.parse(record.response_json), 200, origin);
             if (record.status === "processing" && !claim.changes) return json({ error: "Request already processing", retryable: true }, 409, origin);
             dedupClaimed = true;
@@ -238,7 +243,7 @@ export function createApp({ db, router = null, store, salt, clientLimit = { limi
           const kb = await loadKnowledge(business.id);
           const result = await handleMessage(
             { db, businessId: business.id, kb, router, pack: PACKS[business.industry] ?? plumbingPack, showMockReplies },
-            { message: normalized.value, conversationId: typeof body.conversationId === "string" ? body.conversationId.slice(0, 80) : null }
+            { message: normalized.value, conversationId }
           );
           if (result.notificationsQueued) kick(ctx);
           if (!result.ok) {
