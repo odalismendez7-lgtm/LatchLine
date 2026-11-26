@@ -1,7 +1,7 @@
 name: Tests
 on:
   push:
-    branches: ["main", "stage-6-runtime-validation"]
+    branches: ["main", "stage-6-runtime-validation", "codex/latchline-completion"]
   pull_request:
   workflow_dispatch:
 
