@@ -238,7 +238,7 @@ function main() {
       return [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
     } catch {
       // A deduplication token, not an authentication credential.
-      return `ll${Date.now().toString(16)}${S.seq.toString(16)}${Math.random().toString(16).slice(2)}`.slice(0, 64);
+      return Array.from({ length: 4 }, () => Math.floor(Math.random() * 0x100000000).toString(16).padStart(8, "0")).join("");
     }
   }
   const announce = (t) => { els.status.textContent = ""; setTimeout(() => { els.status.textContent = t; }, 30); };
