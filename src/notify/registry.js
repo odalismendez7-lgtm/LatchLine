@@ -7,9 +7,11 @@
 
 import { NotifyError } from "./provider.js";
 import { MockNotifier } from "./mock.js";
+import { ResendEmailProvider } from "./resend.js";
 
 export function createNotifier(config) {
   if (config?.type === "mock") return new MockNotifier(config);
+  if (config?.type === "resend-email") return new ResendEmailProvider(config);
   throw new NotifyError("disabled", `Notification provider '${String(config?.type)}' is disabled. Real email/SMS providers require founder approval before they can be enabled.`);
 }
 
