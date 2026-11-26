@@ -12,7 +12,7 @@ Status: the Resend email adapter is implemented and its HTTP behavior is tested 
 
 Official references:
 - [Resend Send Email API](https://resend.com/docs/api-reference/emails/send-email)
-- [Resend idempotency keys](https://resend.com/docs/dashboard/emails/idempotency-keys)
+- [Resend Retrieve Email API](https://resend.com/docs/api-reference/emails/get-email)\n- [Resend idempotency keys](https://resend.com/docs/dashboard/emails/idempotency-keys)
 - [Resend error handling](https://resend.com/docs/api-reference/errors)
 
 ## Opt-in configuration
