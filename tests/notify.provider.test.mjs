@@ -169,7 +169,7 @@ describe("Resend email adapter (HTTP mocked)", () => {
   });
 
   test("maps Resend email events to honest delivery states", async () => {
-    for (const [event, expected] of [["sent", "pending"], ["delivery_delayed", "pending"], ["queued", "pending"], ["delivered", "delivered"], ["opened", "delivered"], ["clicked", "delivered"], ["bounced", "failed"], ["suppressed", "failed"], ["failed", "failed"]]) {
+    for (const [event, expected] of [["sent", "pending"], ["delivery_delayed", "pending"], ["queued", "pending"], ["delivered", "delivered"], ["opened", "delivered"], ["clicked", "delivered"], ["bounced", "failed"], ["suppressed", "failed"], ["complained", "failed"], ["canceled", "failed"], ["failed", "failed"]]) {
       let url;
       const provider = new ResendEmailProvider({ apiKey: "x", from: "alerts@example.com", fetchImpl: async (u, init) => {
         url = u; assert.equal(init.method, "GET");
