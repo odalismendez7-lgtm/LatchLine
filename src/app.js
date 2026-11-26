@@ -220,7 +220,7 @@ export function createApp({ db, router = null, store, salt, clientLimit = { limi
           return json({
             reply: result.reply, conversationId: result.conversationId, urgent: result.urgent,
             leadStatus: result.leadStatus, persisted: result.persisted, degraded: { database: result.degraded.database, ai: result.degraded.ai },
-            mode, notice: "Development build: mock AI only, not production-ready.",
+            mode, notice: mode === "live-ai" ? "Live AI is enabled; the platform is not yet production-ready." : "Development build: mock AI only, not production-ready.",
           }, 200, origin);
           } catch (e) {
             // Anything unexpected (limiter store, database, engine): a person describing an emergency still gets the safety guidance.
