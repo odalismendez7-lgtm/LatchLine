@@ -364,7 +364,7 @@ export async function handleMessage(deps, input) {
   if (state.stage !== "done") {
     // ---------- collecting ----------
     const found = extractContact(message);
-    const foundAddress = extractServiceAddress(message);
+    const foundAddress = extractServiceAddress(message, { allowBare: state.awaiting === "address" });
     let consumed = Object.keys(found).length > 0 || Object.keys(foundAddress).length > 0 || asksForHuman;
     let changed = false;
     let forceNext = null;
@@ -468,6 +468,10 @@ export async function handleMessage(deps, input) {
     if (aw === "zip" && !state.slots.zip && !found.zip) {
       if (optionalGiveUp && !sideTurn) settle("zip");
       else { retried = retried ?? "zip"; attempt = attempt || !sideTurn; }
+    }
+    if (aw === "address" && !state.slots.addressLine1 && !foundAddress.addressLine1) {
+      if (optionalGiveUp && !sideTurn) settle("address");
+      else { retried = retried ?? "address"; attempt = attempt || !sideTurn; }
     }
     if (!state.slots.urgency) {
       if (state.emergency) state.slots.urgency = "now";
