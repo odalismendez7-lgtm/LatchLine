@@ -32,6 +32,7 @@ export function maskLead(lead, role) {
   if (can(role, "leads.read_contact")) return lead;
   const out = { ...lead, phone: maskPhone(lead.phone), email: maskEmail(lead.email), contactMasked: true };
   for (const k of ["issue_text", "summary", "preferred_time", "name"]) if (k in out) out[k] = redact(out[k]);
+  for (const k of ["address_line1", "address_line2", "city", "state"]) if (k in out) out[k] = redact(out[k]);
   if (out.events) out.events = out.events.map((e) => ({ type: e.type, created_at: e.created_at })); // event detail may carry actor/conversation ids
   return out;
 }
