@@ -53,7 +53,7 @@ const TEXT = {
 
 const ORDER = ["issue", "name", "phone", "zip", "address", "urgency"];
 // In an emergency the way to reach the customer comes first (their name is the last thing that matters).
-const EMERGENCY_ORDER = ["issue", "phone", "zip", "address", "name", "urgency"];
+const EMERGENCY_ORDER = ["issue", "phone", "zip", "name", "urgency"]; // emergencies never wait on an optional street address
 const orderFor = (state) => (state.emergency ? EMERGENCY_ORDER : ORDER);
 // How many times one question may be asked before the engine stops asking (so it can never loop).
 const MAX_ASKS = { issue: 3, name: 3, phone: 4, zip: 3, address: 3, urgency: 3 };
