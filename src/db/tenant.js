@@ -143,8 +143,10 @@ export function forBusiness(db, businessId) {
           { sql: "INSERT INTO lead_events (id, business_id, lead_id, type, detail, created_at) VALUES (?,?,?,?,?,?)", params: [newId("evt"), B, id, "created", "{}", t] },
           audit("lead_created", id, { fields: Object.keys(lead) }),
         ]);
-        const back = await db.first("SELECT id, phone, email, name FROM leads WHERE id = ? AND business_id = ?", [id, B]);
-        if (!back || back.id !== id || (lead.phone ?? null) !== back.phone || (lead.email ?? null) !== back.email) {
+        const back = await db.first("SELECT id, phone, email, name, address_line1, address_line2, city, state FROM leads WHERE id = ? AND business_id = ?", [id, B]);
+        if (!back || back.id !== id || (lead.phone ?? null) !== back.phone || (lead.email ?? null) !== back.email
+          || (lead.addressLine1 ?? null) !== back.address_line1 || (lead.addressLine2 ?? null) !== back.address_line2
+          || (lead.city ?? null) !== back.city || (lead.state ?? null) !== back.state) {
           throw new DbError("not_persisted", "lead readback did not match what was written");
         }
         return { saved: true, id };
@@ -213,7 +215,7 @@ export function forBusiness(db, businessId) {
           const setCol = (col, val) => {
             if (val === cur[col]) return;
             sets.push(`${col} = ?`); params.push(val); changed.push(col); expect[col] = val;
-            if (["name", "phone", "email", "zip"].includes(col) && cur[col] != null) previous[col] = cur[col]; // an overwritten customer detail is never lost silently
+            if (["name", "phone", "email", "zip", "address_line1", "address_line2", "city", "state"].includes(col) && cur[col] != null) previous[col] = cur[col]; // an overwritten customer detail is never lost silently
           };
           for (const col of ["name", "phone", "email", "zip", "addressLine1", "addressLine2", "city", "state", "urgency"]) if (patch[col] !== undefined) setCol(({ addressLine1: "address_line1", addressLine2: "address_line2", city: "city", state: "state" })[col] ?? col, patch[col]);
           if (typeof patch.issueText === "string" && patch.issueText.trim()) setCol("issue_text", patch.issueText);
