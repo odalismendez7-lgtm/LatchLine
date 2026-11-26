@@ -23,7 +23,7 @@ export class ResendEmailProvider {
 
   constructor({ apiKey, from, fetchImpl = globalThis.fetch, endpoint = ENDPOINT } = {}) {
     if (typeof apiKey !== "string" || !apiKey.trim()) throw new NotifyError("disabled", "Resend requires a server-side API key.");
-    if (typeof from !== "string" || !from.trim() || /[\\r\\n]/.test(from)) throw new NotifyError("disabled", "Resend requires a verified sender address.");
+    if (typeof from !== "string" || !from.trim() || /[\r\n]/.test(from)) throw new NotifyError("disabled", "Resend requires a verified sender address.");
     if (typeof fetchImpl !== "function") throw new NotifyError("disabled", "A fetch implementation is required.");
     this.#key = apiKey;
     this.#from = from.trim();
