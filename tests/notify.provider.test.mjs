@@ -163,7 +163,7 @@ describe("Resend email adapter (HTTP mocked)", () => {
 
   test("rejects missing API key or sender and refuses SMS", async () => {
     assert.throws(() => new ResendEmailProvider({ from: "alerts@example.com" }), (e) => e.code === "disabled");
-    assert.throws(() => new ResendEmailProvider({ apiKey: "x", from: "bad\\nFrom" }), (e) => e.code === "disabled");
+    assert.throws(() => new ResendEmailProvider({ apiKey: "x", from: "bad\nFrom" }), (e) => e.code === "disabled");
     const provider = new ResendEmailProvider({ apiKey: "x", from: "alerts@example.com", fetchImpl: async () => { throw new Error("must not run"); } });
     await assert.rejects(() => provider.send(req({ channel: "sms", to: "+15125550100", subject: undefined })), (e) => e.code === "invalid_request");
   });
