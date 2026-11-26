@@ -44,7 +44,7 @@ export function createApp({ db, router = null, store, salt, clientLimit = { limi
         ...baseHeaders,
         "Access-Control-Allow-Origin": corsOrigin || "null",
         "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type",
+        "Access-Control-Allow-Headers": "Content-Type, Idempotency-Key",
         ...extra,
       },
     });
