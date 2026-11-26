@@ -1,4 +1,4 @@
-// Notifier registry. Only the mock can be created today.
+// Notifier registry. Mock is the default; Resend email is opt-in and requires server-side secrets.
 //
 // Real email and SMS vendors are DELIBERATELY refused: sending can cost money,
 // contacts real people, and transmits customer details to a third party. Enabling
