@@ -37,8 +37,8 @@ export class OpenAIProvider {
     validateRequest(request);
     const controller = new AbortController();
     const abort = () => controller.abort();
-    if (request.signal?.aborted) abort();
-    else request.signal?.addEventListener("abort", abort, { once: true });
+    if (request.signal?.aborted) throw new ProviderError("timeout", "AI provider request was cancelled.", { retryable: true });
+    request.signal?.addEventListener("abort", abort, { once: true });
     const timer = setTimeout(abort, Math.min(request.timeoutMs ?? 8000, 30000));
     const started = Date.now();
     try {
