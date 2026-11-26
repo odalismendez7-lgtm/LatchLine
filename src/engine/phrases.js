@@ -27,6 +27,38 @@ export const PROMPTS = {
   urgency: ["Is this happening right now, or can it wait?", "Is it urgent right now, or can it wait?"],
 };
 
+
+const PROMPTS_ES = {
+  issue: ["¿Cuál es el problema de plomería?", "¿Puede describir qué está pasando? Por ejemplo, una fuga, una obstrucción o falta de agua caliente."],
+  name: ["¿Cuál es su nombre y apellido?", "¿Qué nombre y apellido debemos darle al equipo?"],
+  phone: ["¿Cuál es el mejor número de teléfono para contactarle?", "¿A qué número puede contactarle el equipo?"],
+  zip: ["¿Cuál es el código postal de la propiedad?", "¿Me indica el código postal de la propiedad?"],
+  urgency: ["¿Está pasando ahora mismo o puede esperar?", "¿Es urgente ahora mismo o puede esperar?"],
+};
+const RETRY_ES = {
+  issue: ["Necesito una breve descripción del problema. Por ejemplo: una fuga, una obstrucción o un inodoro que no deja de correr.", "Cuénteme brevemente qué está pasando. También puede pedir que una persona del negocio revise su solicitud."],
+  name: ["No entendí el nombre. Escriba su nombre y apellido, por favor.", "Necesito un nombre y apellido. También puede responder «omitir» para dejarlo en blanco."],
+  phone: ["Ese número no parece ser un teléfono válido de EE. UU. Envíe un número de 10 dígitos, por favor.", "No pude validar ese teléfono. Envíe 10 dígitos o, si prefiere, una dirección de correo electrónico."],
+  zip: ["Envíe el código postal de servicio de 5 dígitos, por favor.", "Necesito un código postal de 5 dígitos. También puede responder «omitir»."],
+  urgency: ["¿Está pasando ahora mismo o puede esperar? Responda «ahora» o «puede esperar».", "Indique «ahora» si está pasando en este momento, o «puede esperar» si no es urgente."],
+};
+const WHY_ES = {
+  issue: "Lo pregunto para que el equipo del negocio sepa cuál es el problema.",
+  name: "Lo pregunto para que el equipo sepa con quién debe hablar. Puede omitirlo.",
+  phone: "Lo pregunto para que el equipo tenga cómo contactarle. No puedo prometer cuándo responderán.",
+  zip: "Lo pregunto para que el equipo pueda revisar si la propiedad está dentro de su área de servicio. Puede omitirlo.",
+  urgency: "Lo pregunto para que el equipo sepa si el problema está ocurriendo ahora. Puede omitirlo.",
+};
+
+/** Conservative language hint for deterministic lead-collection prompts; not a general language detector. */
+export function isSpanishMessage(message) {
+  const t = String(message ?? "").normalize("NFC").toLowerCase();
+  return /[¿¡ñáéíóúü]/.test(t) || /\\b(?:hola|buenas|gracias|necesito|tengo|fuga|plomer[ií]a|inodoro|agua|cocina|baño|bano|puede|favor|por favor|ahora|urgente|nombre|apellido|tel[eé]fono|c[oó]digo postal|esperar|omitir|soy|me llamo)\\b/.test(t);
+}
+export const promptsFor = (message) => isSpanishMessage(message) ? PROMPTS_ES : PROMPTS;
+export const retriesFor = (message) => isSpanishMessage(message) ? RETRY_ES : RETRY;
+export const whyFor = (message) => isSpanishMessage(message) ? WHY_ES : WHY;
+
 export const RETRY = {
   name: [
     "I didn't catch a name. Please type your first and last name.",
