@@ -216,11 +216,11 @@ export function createApp({ db, router = null, store, salt, clientLimit = { limi
           if (requestKey) {
             if (!/^[A-Za-z0-9._:-]{8,128}$/.test(requestKey)) return json({ error: "Invalid idempotency key" }, 400, origin);
             const t = new Date(now()).toISOString();
-            await db.run("INSERT OR IGNORE INTO chat_request_dedup (business_id, request_key, status, created_at, updated_at) VALUES (?,?, 'processing', ?, ?)", [business.id, requestKey, t, t]);
+            const claim = await db.run("INSERT OR IGNORE INTO chat_request_dedup (business_id, request_key, status, created_at, updated_at) VALUES (?,?, 'processing', ?, ?)", [business.id, requestKey, t, t]);
             const record = await db.first("SELECT status, response_json FROM chat_request_dedup WHERE business_id = ? AND request_key = ?", [business.id, requestKey]);
             if (!record) throw new Error("Dedup claim missing");
             if (record.status === "completed" && record.response_json) return json(JSON.parse(record.response_json), 200, origin);
-            if (record.status === "processing" && !(await db.first("SELECT 1 AS x FROM chat_request_dedup WHERE business_id = ? AND request_key = ? AND created_at = ? LIMIT 1", [business.id, requestKey, t]))) return json({ error: "Request already processing", retryable: true }, 409, origin);
+            if (record.status === "processing" && !claim.changes) return json({ error: "Request already processing", retryable: true }, 409, origin);
             dedupClaimed = true;
           }
 
