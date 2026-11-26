@@ -37,4 +37,8 @@ jobs:
           git add src/widget/widget.bundle.js
           git commit -m "Build widget bundle"
           git push origin HEAD:${{ github.event.pull_request.head.ref }}
+      - name: Install Playwright and Chromium for real widget browser tests
+        run: |
+          npm install --no-save playwright
+          npx playwright install --with-deps chromium
       - run: npm test
