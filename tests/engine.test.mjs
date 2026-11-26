@@ -151,6 +151,10 @@ describe("extractors", () => {
     assert.equal(extractUrgency("it can wait"), "can_wait");
     assert.equal(extractUrgency("banana"), null);
     assert.equal(extractUrgency("not right now, can wait"), "can_wait");
+    assert.equal(extractUrgency("Está pasando ahora, es urgente"), "now");
+    assert.equal(extractUrgency("Puede esperar, no es urgente"), "can_wait");
+    assert.equal(extractUrgency("No urge, sin prisa"), "can_wait");
+    assert.equal(extractUrgency("No es urgente, puede esperar"), "can_wait");
   });
 });
 
