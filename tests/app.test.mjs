@@ -47,21 +47,25 @@ describe("site key and origin", () => {
       assert.equal(res.status, 404, JSON.stringify(siteKey));
     }
   });
-  test("business A's key from business B's origin is refused", async () => {
+  test("business A's key from business B's origin gets the same generic response as an unknown key", async () => {
     const { app, db } = await setup();
     const res = await post(app, { message: "my sink is leaking badly here", siteKey: KEY_A }, { origin: B_ORIGIN });
-    assert.equal(res.status, 403);
+    assert.equal(res.status, 404);
+    assert.deepEqual(await res.json(), { error: "Chat unavailable" });
+    const unknown = await post(app, { message: "hi", siteKey: "sk_unknown_00000000" }, { origin: A_ORIGIN });
+    assert.equal(unknown.status, res.status);
+    assert.deepEqual(await unknown.json(), { error: "Chat unavailable" });
     assert.equal(res.headers.get("Access-Control-Allow-Origin"), "null");
     assert.equal((await db.first("SELECT COUNT(*) n FROM conversations")).n, 0);
   });
   test("no Origin header (non-browser caller) is refused", async () => {
     const { app } = await setup();
-    assert.equal((await post(app, { message: "hi", siteKey: KEY_A }, { origin: "" })).status, 403);
+    assert.equal((await post(app, { message: "hi", siteKey: KEY_A }, { origin: "" })).status, 404);
   });
   test("a suspended business is refused", async () => {
     const { app, db } = await setup();
     await db.run("UPDATE businesses SET status = 'suspended' WHERE id = 'acme-plumbing'");
-    assert.equal((await post(app, { message: "hi", siteKey: KEY_A })).status, 403);
+    assert.equal((await post(app, { message: "hi", siteKey: KEY_A })).status, 404);
   });
   test("business id in the body is ignored; the site key decides", async () => {
     const { app, db } = await setup();
