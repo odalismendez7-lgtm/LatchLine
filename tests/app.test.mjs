@@ -209,6 +209,7 @@ describe("CORS", () => {
     const ok = await app.fetch(new Request("https://api.test/api/chat", { method: "OPTIONS", headers: { Origin: A_ORIGIN } }));
     assert.equal(ok.status, 204);
     assert.equal(ok.headers.get("Access-Control-Allow-Origin"), A_ORIGIN);
+    assert.match(ok.headers.get("Access-Control-Allow-Headers") || "", /Idempotency-Key/i);
     const bad = await app.fetch(new Request("https://api.test/api/chat", { method: "OPTIONS", headers: { Origin: "https://evil.example" } }));
     assert.equal(bad.status, 403);
     assert.equal(bad.headers.get("Access-Control-Allow-Origin"), null);
