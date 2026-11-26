@@ -308,7 +308,7 @@ function main() {
     if (m) { S.msgs = S.msgs.filter((x) => x.related !== m.id); m.status = "sending"; }
     else m = add({ role: "customer", text: norm.value, status: "sending" });
     if (!m.idempotencyKey) m.idempotencyKey = newIdempotencyKey();
-    S.busy = true; render(); announce(`${display()} is typing`);
+    S.busy = true; store.save(); render(); announce(`${display()} is typing`);
     const gen = S.gen, ctl = new AbortController(); S.ctl = ctl;
     const timer = setTimeout(() => ctl.abort(), REQUEST_TIMEOUT_MS);
     try {
