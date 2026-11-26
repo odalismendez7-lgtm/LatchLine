@@ -26,7 +26,7 @@ async function open(b, { viewport = DESKTOP, init, reduced, ctxOpts = {} } = {})
   if (reduced) await page.emulateMedia({ reducedMotion: "reduce" });
   if (init) await page.addInitScript(init);
   const reqs = [], logs = [];
-  page.on("request", (r) => { if (r.url().startsWith(W.apiOrigin)) reqs.push({ url: r.url().replace(W.apiOrigin, ""), method: r.method(), body: r.postData() ? JSON.parse(r.postData()) : null }); });
+  page.on("request", (r) => { if (r.url().startsWith(W.apiOrigin)) reqs.push({ url: r.url().replace(W.apiOrigin, ""), method: r.method(), idempotencyKey: r.headers()["idempotency-key"] ?? null, body: r.postData() ? JSON.parse(r.postData()) : null }); });
   page.on("console", (m) => logs.push(m.text()));
   await page.goto(b.site.url);
   return { ctx, page, reqs, logs, chats: () => reqs.filter((r) => r.url === "/api/chat") };
@@ -236,6 +236,10 @@ describe("failures are never shown as success (desktop)", { skip }, () => {
       await page.getByRole("button", { name: "Try again" }).click(); await replied(page, 2);
       assert.doesNotMatch(await logText(page), /Not confirmed|Not sent|couldn't be sent|may not have been received/);
       assert.equal(await page.locator(".m.customer").count(), 1, "retry reuses the same bubble, no duplicate");
+      const chatRequests = chats();
+      assert.equal(chatRequests.length, 2, "one initial request and one retry");
+      assert.match(chatRequests[0].idempotencyKey, /^[a-f0-9]{32}$/);
+      assert.equal(chatRequests[1].idempotencyKey, chatRequests[0].idempotencyKey, "retry must reuse the original idempotency key");
       await ctx.close();
     });
   }
