@@ -258,6 +258,16 @@ describe("chat request idempotency", () => {
     assert.equal((await db.first("SELECT COUNT(*) n FROM chat_request_dedup")).n, 2);
     assert.equal((await db.first("SELECT COUNT(*) n FROM conversations")).n, 2);
   });
+  test("invalid message does not reserve an idempotency key", async () => {
+    const { app, db } = await setup();
+    const key = "retry-after-validation-01";
+    const invalid = await post(app, { message: "   ", siteKey: KEY_A }, { idempotencyKey: key });
+    assert.equal(invalid.status, 400);
+    assert.equal((await db.first("SELECT COUNT(*) n FROM chat_request_dedup")).n, 0);
+    const corrected = await post(app, { message: "what are your hours?", siteKey: KEY_A }, { idempotencyKey: key });
+    assert.equal(corrected.status, 200);
+    assert.equal((await db.first("SELECT status FROM chat_request_dedup WHERE request_key = ?", [key])).status, "completed");
+  });
   test("malformed idempotency keys are rejected", async () => {
     const { app } = await setup();
     for (const key of ["short", "contains spaces!", "x".repeat(129)]) {
