@@ -26,7 +26,7 @@ describe("Cloudflare Workers AI binding adapter (binding mocked)", () => {
       { role: "system", content: request.system },
       { role: "user", content: "My sink is leaking." },
     ]);
-    assert.equal(captured[1].max_completion_tokens, 120);
+    assert.equal(captured[1].max_tokens, 120);
     assert.equal(captured[1].stream, false);
     assert.deepEqual(captured[1].chat_template_kwargs, { enable_thinking: false });
     assert.deepEqual(captured[2], { rejectIfBusy: true });
