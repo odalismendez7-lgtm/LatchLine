@@ -31,7 +31,7 @@ describe("wrangler d1 migrations apply --local (the real migration tool)", { ski
     assert.equal(second.status, 0, second.output);
     assert.match(second.output, /No migrations to apply/i);
     const d = new DatabaseSync(d1File(persist), { readOnly: true });
-    try { assert.equal(d.prepare("SELECT COUNT(*) n FROM d1_migrations").get().n, 5, "each migration recorded exactly once"); } finally { d.close(); }
+    try { assert.equal(d.prepare("SELECT COUNT(*) n FROM d1_migrations").get().n, 6, "each migration recorded exactly once"); } finally { d.close(); }
   });
 
   test("the schema wrangler/D1 produces is identical to the schema the Node test path (migrate-node.js) produces", () => {
