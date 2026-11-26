@@ -132,7 +132,7 @@ export function createApp({ db, router = null, store, salt, clientLimit = { limi
           const ok = await originKnown(origin);
           return new Response(null, {
             status: ok ? 204 : 403,
-            headers: ok ? { "Access-Control-Allow-Origin": origin, "Access-Control-Allow-Methods": "GET, POST, OPTIONS", "Access-Control-Allow-Headers": "Content-Type", "Access-Control-Max-Age": "600", Vary: "Origin" } : { Vary: "Origin" },
+            headers: ok ? { "Access-Control-Allow-Origin": origin, "Access-Control-Allow-Methods": "GET, POST, OPTIONS", "Access-Control-Allow-Headers": "Content-Type, Idempotency-Key", "Access-Control-Max-Age": "600", Vary: "Origin" } : { Vary: "Origin" },
           });
         }
 
@@ -209,6 +209,21 @@ export function createApp({ db, router = null, store, salt, clientLimit = { limi
           const bl = await businessLimiter.check(await hashKey(salt, "business", business.id));
           if (!bl.allowed) return (await safetyFallback("busy", origin)) ?? json({ error: "This chat is busy. Please try again shortly.", retryAfterSec: bl.retryAfterSec }, 429, origin, { "Retry-After": String(bl.retryAfterSec) });
 
+          // Optional idempotency key: replay a completed response for a client retry.
+          // The ledger is tenant-scoped and claimed atomically via INSERT OR IGNORE.
+          const requestKey = request.headers.get("Idempotency-Key") || "";
+          let dedupClaimed = false;
+          if (requestKey) {
+            if (!/^[A-Za-z0-9._:-]{8,128}$/.test(requestKey)) return json({ error: "Invalid idempotency key" }, 400, origin);
+            const t = new Date(now()).toISOString();
+            await db.run("INSERT OR IGNORE INTO chat_request_dedup (business_id, request_key, status, created_at, updated_at) VALUES (?,?, 'processing', ?, ?)", [business.id, requestKey, t, t]);
+            const record = await db.first("SELECT status, response_json FROM chat_request_dedup WHERE business_id = ? AND request_key = ?", [business.id, requestKey]);
+            if (!record) throw new Error("Dedup claim missing");
+            if (record.status === "completed" && record.response_json) return json(JSON.parse(record.response_json), 200, origin);
+            if (record.status === "processing" && !(await db.first("SELECT 1 AS x FROM chat_request_dedup WHERE business_id = ? AND request_key = ? AND created_at = ? LIMIT 1", [business.id, requestKey, t]))) return json({ error: "Request already processing", retryable: true }, 409, origin);
+            dedupClaimed = true;
+          }
+
           const kb = await loadKnowledge(business.id);
           const result = await handleMessage(
             { db, businessId: business.id, kb, router, pack: PACKS[business.industry] ?? plumbingPack, showMockReplies },
@@ -219,11 +234,16 @@ export function createApp({ db, router = null, store, salt, clientLimit = { limi
             if (result.error === "message_too_long" || result.error === "too_long") { const e = await safetyOnlyReply(bodyCopy, "toolong"); if (e) return json(e, 200, origin); }
             return json({ error: "Message must be 1–1200 characters", code: result.error }, 400, origin);
           }
-          return json({
+          const responseBody = {
             reply: result.reply, conversationId: result.conversationId, urgent: result.urgent,
             leadStatus: result.leadStatus, persisted: result.persisted, degraded: { database: result.degraded.database, ai: result.degraded.ai },
             mode, notice: mode === "live-ai" ? "Live AI is enabled; the platform is not yet production-ready." : "Development build: mock AI only, not production-ready.",
-          }, 200, origin);
+          };
+          if (dedupClaimed) {
+            const t = new Date(now()).toISOString();
+            await db.run("UPDATE chat_request_dedup SET status = 'completed', conversation_id = ?, response_json = ?, updated_at = ? WHERE business_id = ? AND request_key = ? AND status = 'processing'", [result.conversationId, JSON.stringify(responseBody), t, business.id, requestKey]);
+          }
+          return json(responseBody, 200, origin);
           } catch (e) {
             // Anything unexpected (limiter store, database, engine): a person describing an emergency still gets the safety guidance.
             // No private data is in that reply, so when the origin cannot be verified (the database may be the thing that failed) it is readable from any site.
