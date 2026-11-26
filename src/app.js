@@ -200,9 +200,11 @@ export function createApp({ db, router = null, store, salt, clientLimit = { limi
 
           let business;
           try { business = await platform.businessBySiteKey(body.siteKey); } catch { return (await safetyFallback("unavailable", cors || "*")) ?? json({ error: "Service temporarily unavailable", retryable: true }, 503, cors); }
-          if (!business) return json({ error: "Unknown site key" }, 404, cors);
-          if (business.status !== "active") return json({ error: "This chat is not available" }, 403, cors);
-          if (!origin || !business.origins.includes(origin)) return json({ error: "Origin not allowed" }, 403, "");
+          if (!business || business.status !== "active" || !origin || !business.origins.includes(origin)) {
+            // Do not let a caller distinguish a real site key from an origin mismatch or suspended tenant.
+            // The key is public, but this avoids turning the endpoint into a tenant-enumeration oracle.
+            return json({ error: "Chat unavailable" }, 404, "");
+          }
 
           const bl = await businessLimiter.check(await hashKey(salt, "business", business.id));
           if (!bl.allowed) return (await safetyFallback("busy", origin)) ?? json({ error: "This chat is busy. Please try again shortly.", retryAfterSec: bl.retryAfterSec }, 429, origin, { "Retry-After": String(bl.retryAfterSec) });
