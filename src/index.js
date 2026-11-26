@@ -40,7 +40,7 @@ function getApp(env) {
         store: new DbStore(db),
         salt: env.RATE_LIMIT_SALT || "",
         router: new AIRouter({ providers: [createProvider(aiType === "openai" ? { type: "openai", apiKey: env.OPENAI_API_KEY, model: env.OPENAI_MODEL } : aiType === "workers-ai" ? { type: "workers-ai", ai: env.AI, model: aiModel } : { type: "mock" })] }),
-        mode: aiType === "openai" ? "live-ai" : "development",
+        mode: aiType === "mock" ? "development" : "live-ai",
         // The mock remains available for unsupported channels; Resend is opt-in and email-only.
         channels: createChannelMap([
           ...(emailType === "resend" ? [createNotifier({ type: "resend-email", apiKey: env.RESEND_API_KEY, from: env.RESEND_FROM_EMAIL })] : []),
