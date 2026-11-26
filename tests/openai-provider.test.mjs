@@ -67,4 +67,36 @@ describe("OpenAI Responses adapter (network mocked)", () => {
       new Response(JSON.stringify({ output: [], usage: { input_tokens: 1, output_tokens: 0 } }), { status: 200 }) });
     await assert.rejects(() => provider.generate(request), (error) => error.code === "invalid_response");
   });
+
+  test("aborts an in-flight request when its configured timeout expires", async () => {
+    let observedAbort = false;
+    const provider = new OpenAIProvider({
+      apiKey: "x", model: "m",
+      fetchImpl: async (_url, init) => new Promise((resolve, reject) => {
+        init.signal.addEventListener("abort", () => {
+          observedAbort = true;
+          const error = new Error("aborted");
+          error.name = "AbortError";
+          reject(error);
+        }, { once: true });
+      }),
+    });
+    await assert.rejects(() => provider.generate({ ...request, timeoutMs: 15 }), (error) =>
+      error instanceof ProviderError && error.code === "timeout" && error.retryable === true);
+    assert.equal(observedAbort, true);
+  });
+
+  test("does not start a network request when the caller signal is already aborted", async () => {
+    let calls = 0;
+    const controller = new AbortController();
+    controller.abort();
+    const provider = new OpenAIProvider({
+      apiKey: "x", model: "m",
+      fetchImpl: async () => { calls += 1; throw new Error("must not be called"); },
+    });
+    await assert.rejects(() => provider.generate({ ...request, signal: controller.signal }), (error) =>
+      error instanceof ProviderError && error.code === "timeout");
+    assert.equal(calls, 0);
+  });
+
 });
