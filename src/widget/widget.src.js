@@ -155,6 +155,10 @@ function main() {
   // ---- DOM ----
   const host = h("div", { id: "latchline-widget-root" });
   const shadow = host.attachShadow({ mode: "open" });
+  let focusMovedWhileSending = false;
+  shadow.addEventListener("focusin", (event) => {
+    if (S.busy && event.target !== els.input && event.target !== els.send) focusMovedWhileSending = true;
+  });
   const root = h("div", { class: `root ${side}` });
   root.style.setProperty("--accent", accent);
   const els = {};
@@ -308,6 +312,7 @@ function main() {
     if (m) { S.msgs = S.msgs.filter((x) => x.related !== m.id); m.status = "sending"; }
     else m = add({ role: "customer", text: norm.value, status: "sending" });
     if (!m.idempotencyKey) m.idempotencyKey = newIdempotencyKey();
+    focusMovedWhileSending = false;
     S.busy = true; store.save(); render(); announce(`${display()} is typing`);
     const gen = S.gen, ctl = new AbortController(); S.ctl = ctl;
     const timer = setTimeout(() => ctl.abort(), REQUEST_TIMEOUT_MS);
@@ -338,8 +343,9 @@ function main() {
       clearTimeout(timer);
       if (gen === S.gen) {
         S.busy = false; S.ctl = null; store.save(); render();
-        const a = shadow.activeElement; // give focus back only if it is not somewhere the customer deliberately moved it
-        if (S.open && (!a || a === els.send || a === els.log || a === els.input)) els.input.focus();
+        const a = shadow.activeElement;
+        // Do not steal focus if the customer moved it while the reply was pending, even if the browser later blurs that control.
+        if (S.open && !focusMovedWhileSending && (!a || a === els.send || a === els.log || a === els.input)) els.input.focus();
       }
     }
   }
