@@ -24,7 +24,8 @@ let appCache = { db: null, key: null, app: null };
 function getApp(env) {
   const accountsOn = env.LATCHLINE_ACCOUNTS === "mock-local";
   const aiType = env.LATCHLINE_AI_PROVIDER === "openai" && env.OPENAI_API_KEY && env.OPENAI_MODEL ? "openai" : "mock";
-  const key = `${accountsOn}|${env.LATCHLINE_DEV_MAILBOX === "1"}|${aiType}|${env.OPENAI_MODEL || ""}`;
+  const emailType = env.LATCHLINE_EMAIL_PROVIDER === "resend" && env.RESEND_API_KEY && env.RESEND_FROM_EMAIL ? "resend" : "mock";
+  const key = `${accountsOn}|${env.LATCHLINE_DEV_MAILBOX === "1"}|${aiType}|${env.OPENAI_MODEL || ""}|${emailType}|${env.RESEND_FROM_EMAIL || ""}`;
   if (appCache.db !== env.DB || appCache.key !== key) {
     const db = new D1Adapter(env.DB);
     appCache = {
@@ -37,8 +38,11 @@ function getApp(env) {
         salt: env.RATE_LIMIT_SALT || "",
         router: new AIRouter({ providers: [createProvider(aiType === "openai" ? { type: "openai", apiKey: env.OPENAI_API_KEY, model: env.OPENAI_MODEL } : { type: "mock" })] }),
         mode: aiType === "openai" ? "live-ai" : "development",
-        // Mock notifier only: nothing is ever actually sent. Real providers are refused by the registry.
-        channels: createChannelMap([createNotifier({ type: "mock" })]),
+        // The mock remains available for unsupported channels; Resend is opt-in and email-only.
+        channels: createChannelMap([
+          ...(emailType === "resend" ? [createNotifier({ type: "resend-email", apiKey: env.RESEND_API_KEY, from: env.RESEND_FROM_EMAIL })] : []),
+          createNotifier({ type: "mock" }),
+        ]),
       }),
     };
   }
