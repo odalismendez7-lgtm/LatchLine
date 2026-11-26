@@ -121,7 +121,7 @@ export function dashboardRepo(db, B) {
     async handoffs(limit = 50) {
       return guard(async () => {
         const rows = await db.all(
-          `SELECT c.id AS conversation_id, c.lead_id, c.urgent, c.updated_at, l.name, l.phone, l.email, l.issue_text, l.status AS lead_status
+          `SELECT c.id AS conversation_id, c.lead_id, c.urgent, c.updated_at, l.name, l.phone, l.email, l.address_line1, l.address_line2, l.city, l.state, l.zip, l.issue_text, l.status AS lead_status
              FROM conversations c LEFT JOIN leads l ON l.id = c.lead_id AND l.business_id = c.business_id
             WHERE c.business_id = ? AND c.status = 'needs_human' ORDER BY c.urgent DESC, c.updated_at DESC LIMIT ?`, [B, clamp(limit, 1, 100, 50)]);
         return rows.map((r) => ({ ...r, urgent: !!r.urgent }));
