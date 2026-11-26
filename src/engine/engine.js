@@ -155,6 +155,7 @@ function summaryText(state, { stageDone }) {
   if (s.phone) items.push(`phone: ${plain(s.phone, 20)}`);
   if (s.email) items.push(`email: ${plain(s.email, 80)}`);
   if (s.zip) items.push(`ZIP: ${plain(s.zip, 10)}`);
+  if (s.addressLine1) items.push(`property address: ${plain([s.addressLine1, s.addressLine2, s.city, s.state].filter(Boolean).join(", "), 180)}`);
   if (s.urgency) items.push(`urgency: ${s.urgency === "now" ? "happening now" : "can wait"}`);
   if (!items.length) return "I don't have any details from you yet, and nothing has been recorded.";
   return stageDone
@@ -283,7 +284,7 @@ export async function handleMessage(deps, input) {
         }
         if (existing) {
           state.leadId = existing.id;
-          state.leadSnap = { name: existing.name, phone: existing.phone, email: existing.email, zip: existing.zip, urgency: existing.urgency, issue: existing.issue_text };
+          state.leadSnap = { name: existing.name, phone: existing.phone, email: existing.email, zip: existing.zip, addressLine1: existing.address_line1, addressLine2: existing.address_line2, city: existing.city, state: existing.state, urgency: existing.urgency, issue: existing.issue_text };
         }
         if (!state.leadId) throw new Error("not saved");
         if (out.created) state.leadSnap = snapOf(sl);
