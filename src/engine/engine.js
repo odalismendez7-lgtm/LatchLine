@@ -26,7 +26,7 @@
 import { detectEmergency, composeSafetyReply } from "../safety/detector.js";
 import { plumbingPack } from "../packs/plumbing.js";
 import { normalizeMessage, sanitizeText, MAX_ISSUE_CHARS } from "../validation/normalize.js";
-import { extractContact, extractName, extractUrgency, isMostlyContactData, spokenDigitsToDigits, looksLikeName, looksLikeBareName, extractEmbeddedName, hasProblemWord, looksLikeNameWhenAsked, asksToRepeat, isPrivacyProbe, isOffTopic } from "./extract.js";
+import { extractContact, extractServiceAddress, extractName, extractUrgency, isMostlyContactData, spokenDigitsToDigits, looksLikeName, looksLikeBareName, extractEmbeddedName, hasProblemWord, looksLikeNameWhenAsked, asksToRepeat, isPrivacyProbe, isOffTopic } from "./extract.js";
 import { guardAiReply } from "./guard.js";
 import { forBusiness } from "../db/tenant.js";
 import { VARIANTS, MAX_CONTACT_REVISIONS } from "../db/notifications.js";
@@ -51,12 +51,12 @@ const TEXT = {
   aiDown: "I can't look that up right now.",
 };
 
-const ORDER = ["issue", "name", "phone", "zip", "urgency"];
+const ORDER = ["issue", "name", "phone", "zip", "address", "urgency"];
 // In an emergency the way to reach the customer comes first (their name is the last thing that matters).
-const EMERGENCY_ORDER = ["issue", "phone", "zip", "name", "urgency"];
+const EMERGENCY_ORDER = ["issue", "phone", "zip", "address", "name", "urgency"];
 const orderFor = (state) => (state.emergency ? EMERGENCY_ORDER : ORDER);
 // How many times one question may be asked before the engine stops asking (so it can never loop).
-const MAX_ASKS = { issue: 3, name: 3, phone: 4, zip: 3, urgency: 3 };
+const MAX_ASKS = { issue: 3, name: 3, phone: 4, zip: 3, address: 3, urgency: 3 };
 const NO_ISSUE_TEXT = "(customer did not describe the problem)";
 const INSTRUCTION_LIKE = /\b(?:ignore (?:all |any |the )?(?:previous|prior|above|earlier)|system prompt|developer message|you are now|act as|pretend (?:to be|you)|jailbreak|disregard)\b|<\/?(?:system|assistant|user)>/i;
 const DONE_INTENT = /\b(?:that'?s (?:all|it)|that is (?:all|it)|just (?:send|pass|record|submit) it|good enough|nothing else|i'?m done)\b/i;
@@ -92,7 +92,7 @@ function sanitizeState(raw) {
   return {
     ...base, ...s, slots, emergency,
     stage: s.stage === "done" ? "done" : "collecting",
-    awaiting: ORDER.includes(s.awaiting) ? s.awaiting : null,
+    awaiting: [...ORDER, "address"].includes(s.awaiting) ? s.awaiting : null,
     handoff: !!s.handoff,
     history: Array.isArray(s.history) ? s.history.filter((h) => h && typeof h.content === "string" && (h.role === "user" || h.role === "assistant")).slice(-HISTORY_TURNS * 2) : [],
     pendingNotifications: Array.isArray(s.pendingNotifications) ? s.pendingNotifications.filter((p) => p && typeof p.kind === "string").map((p) => ({ kind: p.kind, priority: p.priority, variant: VARIANTS.includes(p.variant) ? p.variant : null, revision: Number.isInteger(p.revision) && p.revision >= 0 && p.revision <= MAX_CONTACT_REVISIONS ? p.revision : 0 })).slice(0, 10) : [],
@@ -107,7 +107,7 @@ function sanitizeState(raw) {
     turns: Number.isInteger(s.turns) ? Math.min(s.turns, 10000) : 0,
     contactStuck: !!s.contactStuck, nearLimitSaid: !!s.nearLimitSaid, abandoned: s.abandoned === true, lastReply: typeof s.lastReply === "string" ? s.lastReply.slice(0, 3000) : undefined,
     leadSnap: s.leadSnap && typeof s.leadSnap === "object" && !Array.isArray(s.leadSnap)
-      ? Object.fromEntries(["name", "phone", "email", "zip", "urgency", "issue"].map((k) => [k, typeof s.leadSnap[k] === "string" ? s.leadSnap[k].slice(0, 1200) : null])) : null,
+      ? Object.fromEntries(["name", "phone", "email", "zip", "addressLine1", "addressLine2", "city", "state", "urgency", "issue"].map((k) => [k, typeof s.leadSnap[k] === "string" ? s.leadSnap[k].slice(0, 1200) : null])) : null,
     alerted: !!s.alerted, contactNotified: !!s.contactNotified, contactRev: Number.isInteger(s.contactRev) ? Math.max(0, Math.min(s.contactRev, 100)) : 0, handoffQueued: !!s.handoffQueued, partialNoted: !!s.partialNoted,
   };
 }
@@ -291,7 +291,7 @@ export async function handleMessage(deps, input) {
       }
       const snap = state.leadSnap ?? snapOf({});
       const patch = { emergency: true, emergencyCategories: state.emergency.categories, summary: record.summary, zipInVerifiedArea: record.zipInVerifiedArea };
-      for (const k of ["name", "phone", "email", "zip", "urgency"]) if ((sl[k] ?? null) !== (snap[k] ?? null)) patch[k] = sl[k] ?? null;
+      for (const k of ["name", "phone", "email", "zip", "addressLine1", "addressLine2", "city", "state", "urgency"]) if ((sl[k] ?? null) !== (snap[k] ?? null)) patch[k] = sl[k] ?? null;
       if (sl.issue && sl.issue !== snap.issue) patch.issueText = sl.issue;
       const u = await tenant.leads.update(state.leadId, patch);
       state.leadSnap = snapOf(sl);
@@ -364,7 +364,8 @@ export async function handleMessage(deps, input) {
   if (state.stage !== "done") {
     // ---------- collecting ----------
     const found = extractContact(message);
-    let consumed = Object.keys(found).length > 0 || asksForHuman;
+    const foundAddress = extractServiceAddress(message);
+    let consumed = Object.keys(found).length > 0 || Object.keys(foundAddress).length > 0 || asksForHuman;
     let changed = false;
     let forceNext = null;
     const aw = state.awaiting;
@@ -373,7 +374,11 @@ export async function handleMessage(deps, input) {
     if (found.phone) { state.slots.phone = found.phone; delete state.settled.phone; }
     if (found.email) { state.slots.email = found.email; delete state.settled.phone; }
     if (found.zip) { state.slots.zip = found.zip; delete state.settled.zip; }
-    if ((found.phone && priorSlots.phone && priorSlots.phone !== found.phone) || (found.zip && priorSlots.zip && priorSlots.zip !== found.zip) || (found.email && priorSlots.email && priorSlots.email !== found.email)) changed = true;
+    if (foundAddress.addressLine1) {
+      for (const [key, value] of Object.entries(foundAddress)) state.slots[key] = value;
+      delete state.settled.address;
+    }
+    if ((found.phone && priorSlots.phone && priorSlots.phone !== found.phone) || (found.zip && priorSlots.zip && priorSlots.zip !== found.zip) || (found.email && priorSlots.email && priorSlots.email !== found.email) || (foundAddress.addressLine1 && priorSlots.addressLine1 && priorSlots.addressLine1 !== foundAddress.addressLine1)) changed = true;
     if (hasContact(state.slots)) state.contactStuck = false;
 
     // "that phone number is wrong": clear it and ask again
@@ -716,16 +721,17 @@ function contactAdvice(kb) {
   return SAY.noContactAdviceGeneric;
 }
 
-const snapOf = (s) => ({ name: s.name ?? null, phone: s.phone ?? null, email: s.email ?? null, zip: s.zip ?? null, urgency: s.urgency ?? null, issue: s.issue ?? null });
+const snapOf = (s) => ({ name: s.name ?? null, phone: s.phone ?? null, email: s.email ?? null, zip: s.zip ?? null, addressLine1: s.addressLine1 ?? null, addressLine2: s.addressLine2 ?? null, city: s.city ?? null, state: s.state ?? null, urgency: s.urgency ?? null, issue: s.issue ?? null });
 
 /** The lead row for the current conversation state. Missing details stay null: nothing is invented to fill a gap. */
 function leadRecord(state, kb) {
   const s = state.slots;
   let zipIn = false;
   try { zipIn = !!s.zip && !!kb?.grounding?.().facts?.service_area_zips?.includes(s.zip); } catch { zipIn = false; }
-  const who = [s.name, s.phone ? `(${s.phone})` : s.email ? `(${s.email})` : null, s.zip].filter(Boolean).join(" ");
+  const who = [s.name, s.phone ? `(${s.phone})` : s.email ? `(${s.email})` : null, s.addressLine1, s.city, s.state, s.zip].filter(Boolean).join(" ");
   return {
     name: s.name ?? null, phone: s.phone ?? null, email: s.email ?? null, zip: s.zip ?? null,
+    addressLine1: s.addressLine1 ?? null, addressLine2: s.addressLine2 ?? null, city: s.city ?? null, state: s.state ?? null,
     issueCategory: state.emergency?.categories?.[0] ?? null,
     issueText: s.issue ?? null, urgency: s.urgency ?? null, preferredContact: null, preferredTime: null,
     emergency: !!state.emergency, emergencyCategories: state.emergency?.categories ?? [],
@@ -745,9 +751,10 @@ async function saveLead({ tenant, conv, state, kb }) {
       return { ok: true, kind: "recorded_existing", leadId: dup.id };
     }
     // Missing optional details stay null: nothing is invented to fill a gap.
-    const who = [s.name, s.phone ? `(${s.phone})` : s.email ? `(${s.email})` : null, s.zip].filter(Boolean).join(" ");
+    const who = [s.name, s.phone ? `(${s.phone})` : s.email ? `(${s.email})` : null, s.addressLine1, s.city, s.state, s.zip].filter(Boolean).join(" ");
     const r = await tenant.leads.create(conv.id, {
       name: s.name ?? null, phone: s.phone ?? null, email: s.email ?? null, zip: s.zip ?? null,
+    addressLine1: s.addressLine1 ?? null, addressLine2: s.addressLine2 ?? null, city: s.city ?? null, state: s.state ?? null,
       issueCategory: state.emergency?.categories?.[0] ?? null,
       issueText: s.issue, urgency: s.urgency ?? null, preferredContact: null, preferredTime: null,
       emergency: !!state.emergency, emergencyCategories: state.emergency?.categories ?? [],
