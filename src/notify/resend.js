@@ -31,6 +31,37 @@ export class ResendEmailProvider {
     this.#endpoint = endpoint;
   }
 
+  async getDeliveryStatus(providerMessageId) {
+    if (typeof providerMessageId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(providerMessageId)) {
+      throw new NotifyError("invalid_request", "Invalid provider message ID.");
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 7500);
+    try {
+      let response;
+      try {
+        response = await this.#fetch(`${this.#endpoint}/${encodeURIComponent(providerMessageId)}`, {
+          method: "GET",
+          headers: { Authorization: `Bearer ${this.#key}` },
+          signal: controller.signal,
+        });
+      } catch {
+        if (controller.signal.aborted) throw new NotifyError("timeout", "Email status request timed out.", { retryable: true });
+        throw new NotifyError("provider_unavailable", "Email provider could not be reached.", { retryable: true });
+      }
+      if (!response.ok) throw mapError(response.status);
+      let payload;
+      try { payload = await response.json(); } catch { throw new NotifyError("invalid_response", "Email provider returned an unreadable status.", { retryable: true }); }
+      const event = payload?.last_event;
+      if (event === "delivered" || event === "opened" || event === "clicked") return { status: "delivered" };
+      if (event === "bounced" || event === "suppressed" || event === "failed") return { status: "failed", code: event };
+      // Sent, queued, scheduled, and delivery_delayed are not delivery confirmation.
+      return { status: "pending" };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   async send(request) {
     validateSendRequest(request);
     if (request.channel !== "email") throw new NotifyError("invalid_request", "Resend email provider cannot send SMS.");
