@@ -200,7 +200,11 @@ describe("conversation through the real backend", { skip }, () => {
   test("recovery: when the server no longer has the conversation, the customer is told it is a new one", async () => {
     const b = await biz(); const { ctx, page } = await open(b); await openChat(page);
     await say(page, "my water heater is leaking"); await replied(page, 2);
-    // Simulate a conversation removed by retention/admin cleanup. Disable FK checks only on this test database\n    // so the fixture can represent a missing conversation even if dependent transcript rows remain.\n    W.api.db.exec("PRAGMA foreign_keys = OFF");\n    await W.api.db.run("DELETE FROM conversations WHERE business_id = ?", [b.id]);\n    W.api.db.exec("PRAGMA foreign_keys = ON");
+    // Simulate a conversation removed by retention/admin cleanup. Disable FK checks only on this test database
+    // so the fixture can represent a missing conversation even if dependent transcript rows remain.
+    W.api.db.exec("PRAGMA foreign_keys = OFF");
+    await W.api.db.run("DELETE FROM conversations WHERE business_id = ?", [b.id]);
+    W.api.db.exec("PRAGMA foreign_keys = ON");
     await say(page, "hello?"); await waitFor(page, () => /new one/.test(document.querySelector("#latchline-widget-root").shadowRoot.querySelector(".log").innerText));
     assert.match(await logText(page), /couldn't continue your earlier conversation/);
     await ctx.close();
@@ -540,7 +544,8 @@ describe("Stage 7B review findings (each failed before its fix)", { skip }, () =
     const b = await biz(); const { ctx, page } = await open(b); await openChat(page);
     await page.route("**/api/chat", async (r) => { await new Promise((x) => setTimeout(x, 600)); r.continue(); });
     await say(page, "hello there"); await page.locator(".typing.on").waitFor();
-    await inShadow(page, (r) => r.querySelector("header button").focus());
+    const focusedNewChat = await inShadow(page, (r) => { const button = r.querySelector("header button"); button.focus(); return r.activeElement === button; });
+    assert.equal(focusedNewChat, true, "the New chat button must receive focus before the reply arrives");
     await replied(page, 2); await page.waitForTimeout(200);
     assert.equal(await inShadow(page, (r) => r.activeElement?.textContent), "New chat");
     await ctx.close();
