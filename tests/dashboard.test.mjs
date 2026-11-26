@@ -8,9 +8,19 @@ import { MockMailer } from "../src/auth/mailer.js";
 import { MockNotifier } from "../src/notify/mock.js";
 import { dispatchDue } from "../src/notify/dispatcher.js";
 import { createApp } from "../src/app.js";
+import { maskLead } from "../src/dashboard/authz.js";
 
 const ORIGIN = "http://localhost";
 const PW = "correct horse battery staple";
+
+test("property addresses are fully hidden from roles without contact permission", () => {
+  const lead = { address_line1: "123 Main St", address_line2: "Apt 4", city: "Bronx", state: "NY", zip: "10467" };
+  const viewer = maskLead(lead, "viewer");
+  for (const field of ["address_line1", "address_line2", "city", "state"]) assert.equal(viewer[field], "[hidden]");
+  assert.equal(viewer.zip, "10467");
+  const owner = maskLead(lead, "owner");
+  assert.equal(owner.address_line1, "123 Main St");
+});
 
 export async function makeWorld({ devMode = false } = {}) {
   const db = new SqliteAdapter(":memory:"); migrate(db);
