@@ -36,7 +36,7 @@ The mock remains the default unless `LATCHLINE_AI_PROVIDER=workers-ai` and the `
 
 ## Guardrails
 
-- Calls are synchronous, non-streaming, and use `rejectIfBusy: true` to fail rather than wait in a capacity queue.
+- Calls are synchronous, non-streaming, pass `max_tokens` to cap generated output, and use `rejectIfBusy: true` in the binding's third argument to fail rather than wait in a capacity queue.
 - Output is capped at the engine's requested token limit (currently 200 tokens).
 - The deterministic safety detector, verified-knowledge grounding, lead persistence, and response guard remain in place.
 - Provider failures return a safe degraded reply; they do not cause the engine to invent a result.
