@@ -24,8 +24,8 @@ export const PROMPTS = {
   name: ["What is your first and last name?", "Who should the team ask for? A first and last name is enough."],
   phone: ["What is the best phone number to reach you?", "What phone number can the team reach you at?"],
   zip: ["What is the ZIP code of the property?", "And the ZIP code of the property?"],
-  address: ["What is the property's street address? Include apartment or unit if applicable, or say "skip"."],
-  urgency:  urgency: ["Is this happening right now, or can it wait?", "Is it urgent right now, or can it wait?"],
+  address: ['What is the property\'s street address? Include apartment or unit if applicable, or say "skip".'],
+  urgency: ["Is this happening right now, or can it wait?", "Is it urgent right now, or can it wait?"],
 };
 
 
