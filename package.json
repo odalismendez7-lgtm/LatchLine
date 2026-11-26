@@ -5,7 +5,7 @@
   "description": "LATCHLINE: AI customer operations platform for service businesses (starting with residential plumbing).",
   "type": "module",
   "scripts": {
-    "test": "node --test \"tests/**/*.test.mjs\"",
+    "test": "node --test --test-concurrency=1 \"tests/**/*.test.mjs\"",
     "dev": "node scripts/dev-server.mjs",
     "dev:worker": "node scripts/worker-sim.mjs",
     "dev:reset": "node scripts/reset-local.mjs",
