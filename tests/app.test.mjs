@@ -253,6 +253,16 @@ describe("chat request idempotency", () => {
     assert.equal((await db.first("SELECT COUNT(*) n FROM conversations")).n, 1);
     assert.equal((await db.first("SELECT COUNT(*) n FROM chat_request_dedup")).n, 1);
   });
+  test("a key cannot replay a response for different message content", async () => {
+    const { app, db } = await setup();
+    const key = "same-key-different-payload";
+    const first = await post(app, { message: "my kitchen faucet keeps dripping", siteKey: KEY_A }, { idempotencyKey: key });
+    assert.equal(first.status, 200);
+    const changed = await post(app, { message: "my toilet is overflowing", siteKey: KEY_A }, { idempotencyKey: key });
+    assert.equal(changed.status, 409);
+    assert.equal((await changed.json()).code, "idempotency_key_conflict");
+    assert.equal((await db.first("SELECT COUNT(*) n FROM conversations")).n, 1);
+  });
   test("keys are tenant-scoped", async () => {
     const { app, db } = await setup();
     await post(app, { message: "my sink is leaking", siteKey: KEY_A }, { idempotencyKey: "tenant-key-0001" });
