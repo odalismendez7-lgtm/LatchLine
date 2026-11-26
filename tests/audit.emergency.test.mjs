@@ -306,7 +306,8 @@ describe("audit: migration 0005 on a database that already holds data", () => {
     db.exec("INSERT INTO leads (id, business_id, conversation_id, phone, emergency, created_at, updated_at) VALUES ('led_1','acme-plumbing','cnv_1','+15125550142',1,'t','t')");
     db.exec(`INSERT INTO notifications (id, business_id, lead_id, kind, priority, priority_rank, channel, recipient, idempotency_key, status, max_attempts, created_at, updated_at)
              VALUES ('ntf_old','acme-plumbing','led_1','new_lead','emergency',0,'email','o@x.example','new_lead:led_1:cnv_1:email:o@x.example','sent',8,'t','t')`);
-    assert.deepEqual(migrate(db), ["0005_notification_variant.sql", "0006_chat_request_dedup.sql", "0007_chat_request_payload_hash.sql"]);
+    assert.deepEqual(migrate(db), ["0005_notification_variant.sql", "0006_chat_request_dedup.sql", "0007_chat_request_payload_hash.sql",
+      "0008_structured_service_address.sql"]);
     assert.deepEqual(migrate(db), [], "running again is a no-op");
     const old = await db.first("SELECT variant, status, idempotency_key FROM notifications WHERE id = 'ntf_old'");
     assert.deepEqual(old, { variant: null, status: "sent", idempotency_key: "new_lead:led_1:cnv_1:email:o@x.example" });
