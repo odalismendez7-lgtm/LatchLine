@@ -60,10 +60,10 @@ export function extractName(text) {
 
 export function extractUrgency(text) {
   const t = String(text ?? "").toLowerCase();
-  const wait = /\\b(can wait|not urgent|no rush|whenever|later|next week|this week|not right now|not now|not an emergency|routine|puede esperar|no urge|no es urgente|sin prisa|más adelante|mas adelante|la próxima semana|la proxima semana|la semana que viene)\\b/.test(t);
-  const now = /\\b(right now|happening now|now|asap|today|urgent|immediately|currently|still|ahora|ahorita|en este momento|está pasando ahora|esta pasando ahora|urgente|hoy|inmediatamente)\\b/.test(t)
-    && !/\\bnot (?:right )?now\\b/.test(t)
-    && !/\\bno (?:es )?urgente\\b/.test(t);
+  const wait = /\b(can wait|not urgent|no rush|whenever|later|next week|this week|not right now|not now|not an emergency|routine|puede esperar|no urge|no es urgente|sin prisa|más adelante|mas adelante|la próxima semana|la proxima semana|la semana que viene)\b/.test(t);
+  const now = /\b(right now|happening now|now|asap|today|urgent|immediately|currently|still|ahora|ahorita|en este momento|está pasando ahora|esta pasando ahora|urgente|hoy|inmediatamente)\b/.test(t)
+    && !/\bnot (?:right )?now\b/.test(t)
+    && !/\bno (?:es )?urgente\b/.test(t);
   if (wait && !now) return "can_wait";
   if (now && !wait) return "now";
   return null;
