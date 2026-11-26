@@ -113,7 +113,7 @@ function sanitizeState(raw) {
 }
 
 const hasContact = (slots) => !!(slots.phone || slots.email);
-const isFilled = (slots, k) => (k === "phone" ? hasContact(slots) : !!slots[k]);
+const isFilled = (slots, k) => (k === "phone" ? hasContact(slots) : k === "address" ? !!slots.addressLine1 : !!slots[k]);
 const neededSlots = (state) => orderFor(state).filter((k) => !isFilled(state.slots, k) && !state.settled[k]);
 
 function systemPrompt(grounding) {
@@ -376,6 +376,7 @@ export async function handleMessage(deps, input) {
     if (found.zip) { state.slots.zip = found.zip; delete state.settled.zip; }
     if (foundAddress.addressLine1) {
       for (const [key, value] of Object.entries(foundAddress)) state.slots[key] = value;
+      state.slots.address = foundAddress.addressLine1;
       delete state.settled.address;
     }
     if ((found.phone && priorSlots.phone && priorSlots.phone !== found.phone) || (found.zip && priorSlots.zip && priorSlots.zip !== found.zip) || (found.email && priorSlots.email && priorSlots.email !== found.email) || (foundAddress.addressLine1 && priorSlots.addressLine1 && priorSlots.addressLine1 !== foundAddress.addressLine1)) changed = true;
@@ -502,7 +503,7 @@ export async function handleMessage(deps, input) {
     if (retried && attempt && !privacyProbe && !offTopic) { // probes and chatter never use up the customer's attempts
       state.asked[retried] = (state.asked[retried] ?? 0) + 1;
       if (state.asked[retried] >= MAX_ASKS[retried]) {
-        if (retried === "name" || retried === "zip" || retried === "urgency") { state.settled[retried] = "gave_up"; notes.push(pick(state, "skipped", SAY.skipped)); }
+        if (retried === "name" || retried === "zip" || retried === "address" || retried === "urgency") { state.settled[retried] = "gave_up"; notes.push(pick(state, "skipped", SAY.skipped)); }
         else if (retried === "issue") { state.settled.issue = "gave_up"; state.slots.issue = NO_ISSUE_TEXT; stuckNote = SAY.stuckIssue; }
         else if (retried === "phone") { state.settled.phone = "gave_up"; state.contactStuck = true; stuckNote = `${state.leadId ? SAY.noContactPartial : SAY.stuckContact} ${contactAdvice(kb)}`; }
         retried = null;
