@@ -23,10 +23,9 @@ import { dashboardPage } from "./dashboard/page.js";
 import { WIDGET_JS, WIDGET_VERSION } from "./widget/widget.bundle.js";
 
 const MAX_BODY_BYTES = 8 * 1024;
-const MODE = "development"; // honest label: mock AI only; shown by the widget
 const PACKS = { plumbing: plumbingPack };
 
-export function createApp({ db, router = null, store, salt, clientLimit = { limit: 30, windowMs: 60_000 }, businessLimit = { limit: 600, windowMs: 60_000 }, widgetConfigLimit = { limit: 60, windowMs: 60_000 }, now = Date.now, showMockReplies = false, extraKnownOrigins = [], channels = null, accounts = null }) {
+export function createApp({ db, router = null, store, salt, clientLimit = { limit: 30, windowMs: 60_000 }, businessLimit = { limit: 600, windowMs: 60_000 }, widgetConfigLimit = { limit: 60, windowMs: 60_000 }, now = Date.now, showMockReplies = false, extraKnownOrigins = [], channels = null, accounts = null, mode = "development" }) {
   if (typeof salt !== "string" || salt.length < 8) throw new Error("createApp needs a salt of at least 8 characters");
   const platform = platformRepo(db);
   const clientLimiter = createLimiter({ store, ...clientLimit, now });
@@ -157,7 +156,7 @@ export function createApp({ db, router = null, store, salt, clientLimit = { limi
           try { business = await platform.businessBySiteKey(url.searchParams.get("siteKey")); } catch { return json({ error: "Service temporarily unavailable", retryable: true }, 503, cors); }
           if (!business || business.status !== "active" || !asked || !business.origins.includes(asked)) return json({ error: "Not available" }, 404, cors);
           const name = String(business.name).slice(0, 120);
-          return json({ name, welcome: `Hi, this is the ${name} website assistant. What can I help you with?`, mode: MODE, maxMessageChars: MAX_MESSAGE_CHARS, apiVersion: 1 }, 200, asked, { "Cache-Control": "private, max-age=60" });
+          return json({ name, welcome: `Hi, this is the ${name} website assistant. What can I help you with?`, mode, maxMessageChars: MAX_MESSAGE_CHARS, apiVersion: 1 }, 200, asked, { "Cache-Control": "private, max-age=60" });
         }
 
         if (dashboard) {
@@ -169,7 +168,7 @@ export function createApp({ db, router = null, store, salt, clientLimit = { limi
         if (url.pathname === "/health" && request.method === "GET") {
           let databaseConnected = false;
           try { databaseConnected = (await platform.ping()) === true; } catch { databaseConnected = false; }
-          return json({ ok: databaseConnected, service: "LATCHLINE API", mode: "development", realAIConnected: false, databaseConnected, note: "Mock AI only. Not production-ready." }, databaseConnected ? 200 : 503, (await originKnown(origin)) ? origin : "");
+          return json({ ok: databaseConnected, service: "LATCHLINE API", mode, realAIConnected: mode === "live-ai", databaseConnected, note: mode === "live-ai" ? "Live AI configured; other production gates may remain." : "Mock AI only. Not production-ready." }, databaseConnected ? 200 : 503, (await originKnown(origin)) ? origin : "");
         }
 
         if (url.pathname === "/api/chat" && request.method === "POST") {
