@@ -477,7 +477,10 @@ export async function handleMessage(deps, input) {
       if (state.emergency) state.slots.urgency = "now";
       else {
         const u = extractUrgency(message);
-        if (u && !(aw && aw !== "urgency" && sideTurn)) { state.slots.urgency = u; consumed = true; delete state.settled.urgency; }
+        if (u && !(aw && aw !== "urgency" && sideTurn)) {
+          state.slots.urgency = u; consumed = true; delete state.settled.urgency;
+          if (aw === "address" && !state.slots.addressLine1) { state.settled.address = "skipped"; retried = null; attempt = false; }
+        }
         else if (aw === "urgency") {
           if (optionalGiveUp && !sideTurn) settle("urgency");
           else { retried = retried ?? "urgency"; attempt = attempt || !sideTurn; }
