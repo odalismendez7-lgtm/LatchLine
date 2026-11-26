@@ -1,6 +1,6 @@
 # Feature Status
 
-Last updated: 2026-11-21 (Stage 6 runtime validation)
+Last updated: 2026-11-26 (OpenAI adapter code added; mocked tests only)
 
 A feature is **Done** only when it is implemented, tested (tests passing and recorded in `TEST_CASES.md`), and reviewed. Nothing below is Done yet, including after Stage 6. "In progress" means part is built and tested but the requirement is not yet met. "Prototype" means a stand-in that does not meet the requirement.
 
@@ -19,7 +19,7 @@ A feature is **Done** only when it is implemented, tested (tests passing and rec
 | 11 | Conversation history and reporting | Not started | |
 | 12 | Monitoring and error handling | Prototype | Notification attempts, errors (short codes) and `needsAttention` lists are stored per business, but nothing displays or alerts on them. `/health` reports database reachability honestly (503 when down). Degraded flags returned per reply. No stored metrics or alerts |
 | 13 | Subscription plans/entitlements | Not started | Design and cost research in `PLANS_AND_PRICING.md` |
-| 14 | AI provider interface + mock provider | In progress | Interface, labeled mock, registry (real providers refused), router with fallback, retries, timeout, circuit breaker, call recording: built and tested. No real provider (disabled by design) |
+| 14 | AI provider interface + mock provider | In progress | Interface, labeled mock, router with fallback, retries, timeout, circuit breaker and privacy-safe call recording are tested. An opt-in OpenAI Responses API adapter is present on `codex/latchline-completion`; its tests use mocked HTTP only. No API account/key is connected and no real model call or quality evaluation has been run. Mock remains the default. See `OPENAI_SETUP.md`. |
 | 15 | Analytics for owner value | Not started | |
 | 16 | Backups and recovery | Not started | D1 Time Travel researched (7 days Free / 30 days Paid); nothing set up or tested |
 | 17 | Rate limiting | In progress | Per-client and per-business fixed windows, memory and database stores, 429 + Retry-After, fallback if the store fails. Safety replies still returned when rate-limited. Not load-tested; IP-based (KI-16) |
