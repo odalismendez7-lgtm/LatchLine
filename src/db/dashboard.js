@@ -148,6 +148,42 @@ export function dashboardRepo(db, B) {
         return { deleted: ids.length, hasMore: ids.length === safeLimit };
       });
     },
+    async analytics({ from, to } = {}) {
+      const validDate = (s) => typeof s === "string" && /^\\d{4}-\\d{2}-\\d{2}$/.test(s)
+        && Number.isFinite(Date.parse(s + "T00:00:00.000Z"))
+        && new Date(s + "T00:00:00.000Z").toISOString().slice(0, 10) === s;
+      if (!validDate(from) || !validDate(to) || from > to) throw new DbError("invalid_data", "analytics requires a valid inclusive date range");
+      const start = from + "T00:00:00.000Z";
+      const end = new Date(Date.parse(to + "T00:00:00.000Z") + 86400000).toISOString();
+      if (Date.parse(end) - Date.parse(start) > 366 * 86400000) throw new DbError("invalid_data", "analytics range cannot exceed 366 days");
+      return guard(async () => {
+        const totals = await db.first(
+          "SELECT COUNT(*) AS sampleSize, SUM(CASE WHEN emergency = 1 THEN 1 ELSE 0 END) AS emergencyCount FROM leads WHERE business_id = ? AND created_at >= ? AND created_at < ?",
+          [B, start, end]);
+        const statuses = await db.all(
+          "SELECT status, COUNT(*) AS count FROM leads WHERE business_id = ? AND created_at >= ? AND created_at < ? GROUP BY status ORDER BY status",
+          [B, start, end]);
+        const categories = await db.all(
+          "SELECT COALESCE(issue_category, 'unspecified') AS category, COUNT(*) AS count FROM leads WHERE business_id = ? AND created_at >= ? AND created_at < ? GROUP BY COALESCE(issue_category, 'unspecified') ORDER BY count DESC, category",
+          [B, start, end]);
+        const daily = await db.all(
+          "SELECT substr(created_at, 1, 10) AS date, COUNT(*) AS leads FROM leads WHERE business_id = ? AND created_at >= ? AND created_at < ? GROUP BY substr(created_at, 1, 10) ORDER BY date",
+          [B, start, end]);
+        const outcomes = await db.first(
+          "SELECT SUM(CASE WHEN status = 'won' THEN 1 ELSE 0 END) AS won, SUM(CASE WHEN status = 'lost' THEN 1 ELSE 0 END) AS lost, SUM(CASE WHEN status IN ('won','lost') THEN 1 ELSE 0 END) AS outcomeSampleSize FROM leads WHERE business_id = ? AND created_at >= ? AND created_at < ?",
+          [B, start, end]);
+        return {
+          range: { from, to, inclusive: true },
+          sampleSize: totals.sampleSize ?? 0,
+          emergencyCount: totals.emergencyCount ?? 0,
+          statuses,
+          categories,
+          daily,
+          outcomes: { won: outcomes.won ?? 0, lost: outcomes.lost ?? 0, sampleSize: outcomes.outcomeSampleSize ?? 0 },
+          methodology: "Counts are based on leads created within the selected date range. Outcomes include only owner-entered won/lost statuses; no revenue or job value is inferred."
+        };
+      });
+    },
     async notificationHistory(limit = 50) {
       return guard(async () => db.all(
         `SELECT id, lead_id, kind, variant, priority, channel, status, attempts, last_error, simulated, created_at, sent_at
