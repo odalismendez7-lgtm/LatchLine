@@ -94,7 +94,7 @@ async function devMailView() {
 }
 
 // ---------------- signed-in app ----------------
-const NAV = [["overview", "Overview", "overview.read"], ["widget", "Website setup", "settings.read"], ["leads", "Leads", "leads.read"], ["conversations", "Conversations", "conversations.read"], ["handoffs", "Handoffs", "handoffs.read"], ["notifications", "Notifications", "notifications.read"], ["settings", "Settings", "settings.read"], ["contacts", "Contacts", "contacts.read"], ["team", "Team", "team.read"], ["audit", "Audit log", "audit.read"]];
+const NAV = [["overview", "Overview", "overview.read"], ["analytics", "Analytics", "overview.read"], ["widget", "Website setup", "settings.read"], ["leads", "Leads", "leads.read"], ["conversations", "Conversations", "conversations.read"], ["handoffs", "Handoffs", "handoffs.read"], ["notifications", "Notifications", "notifications.read"], ["settings", "Settings", "settings.read"], ["contacts", "Contacts", "contacts.read"], ["team", "Team", "team.read"], ["audit", "Audit log", "audit.read"]];
 function shell() {
   const nav = h("nav", { class: "nav", "aria-label": "Sections" }, NAV.filter((n) => can(n[2])).map((n) => h("button", { class: "navbtn" + (S.view === n[0] ? " active" : ""), "aria-current": S.view === n[0] ? "page" : null, onclick: () => { S.view = n[0]; S.openLead = null; render(); } }, n[1])));
   const sel = S.me.businesses.length > 1 ? h("select", { "aria-label": "Business", onchange: (e) => { S.biz = S.me.businesses.find((b) => b.id === e.target.value); S.view = "overview"; render(); } }, S.me.businesses.map((b) => h("option", { value: b.id, selected: b.id === S.biz.id }, b.name + " (" + b.role + ")"))) : h("span", { class: "bizname" }, S.biz.name + " · " + S.biz.role);
@@ -106,7 +106,7 @@ async function render() {
   shell();
   paintToast();
   const m = $("#main"); m.replaceChildren(h("p", { class: "muted" }, "Loading…"));
-  const views = { overview: vOverview, widget: vWidget, leads: vLeads, conversations: vConvs, handoffs: vHandoffs, notifications: vNotifs, settings: vSettings, contacts: vContacts, team: vTeam, audit: vAudit };
+  const views = { overview: vOverview, analytics: vAnalytics, widget: vWidget, leads: vLeads, conversations: vConvs, handoffs: vHandoffs, notifications: vNotifs, settings: vSettings, contacts: vContacts, team: vTeam, audit: vAudit };
   try { const node = await views[S.view](); m.replaceChildren(node); } catch (e) { m.replaceChildren(h("p", { class: "bad" }, "Could not load this section.")); }
 }
 const chip = (t, cls) => h("span", { class: "chip " + (cls || "") }, t);
@@ -145,6 +145,34 @@ async function vOverview() {
     h("div", { class: "stats" }, card("New leads", o.leadsNew, "", () => { S.view = "leads"; S.filter = { status: "new" }; render(); }), card("Urgent, not yet handled", o.urgentOpen, o.urgentOpen ? "urgent" : "", () => { S.view = "leads"; S.filter = { urgent: "1" }; render(); }), card("Emergencies with no contact details", o.incompleteEmergency, o.incompleteEmergency ? "urgent" : "", () => { S.view = "leads"; S.filter = { urgent: "1", incomplete: "1" }; render(); }), card("Waiting for a human", o.handoffsOpen, "", () => { S.view = "handoffs"; render(); }), card("All leads", o.leadsTotal, "", () => { S.view = "leads"; S.filter = {}; render(); }), card("Conversations", o.conversationsTotal, "", () => { S.view = "conversations"; render(); })),
     r.data.notificationsNeedingAttention ? h("p", { class: "alert" }, r.data.notificationsNeedingAttention + " notification(s) need attention — the business may NOT have been told about them. ", h("a", { href: "#", onclick: (e) => { e.preventDefault(); S.view = "notifications"; render(); } }, "Review")) : null,
     h("p", { class: "muted" }, "Notifications in this build are SIMULATED (mock provider). No real email or text is sent."));
+}
+
+async function vAnalytics() {
+  const day = (d) => d.toISOString().slice(0, 10);
+  const today = new Date();
+  const defaultTo = day(today);
+  const start = new Date(today); start.setDate(start.getDate() - 29);
+  const defaultFrom = day(start);
+  const r = await api("GET", B("/analytics?from=" + encodeURIComponent(S.analyticsFrom || defaultFrom) + "&to=" + encodeURIComponent(S.analyticsTo || defaultTo)));
+  if (!r.ok) return h("section", null, h("h2", null, "Analytics"), h("p", { class: "bad" }, say(r)));
+  const a = r.data.analytics || {};
+  const range = h("form", { class: "filters", onsubmit: (e) => {
+    e.preventDefault(); const v = vals(e.target);
+    if (!v.from || !v.to || v.from > v.to) { toast("Choose a valid date range.", true); return; }
+    S.analyticsFrom = v.from; S.analyticsTo = v.to; render();
+  } },
+    h("label", null, "From", h("input", { type: "date", name: "from", value: S.analyticsFrom || defaultFrom, required: true })),
+    h("label", null, "To", h("input", { type: "date", name: "to", value: S.analyticsTo || defaultTo, required: true })),
+    h("button", { class: "btn", type: "submit" }, "Apply range"));
+  const stat = (label, value) => h("div", { class: "stat", role: "group" }, h("span", { class: "num" }, String(value ?? 0)), h("span", null, label));
+  const list = (title, rows, key) => h("section", null, h("h3", null, title), rows.length ? tbl([key, "Count"], rows.map((x) => h("tr", null, h("td", null, x[key]), h("td", null, x.count ?? x.leads)))) : empty("No records in this range."));
+  return h("section", null, h("h2", null, "Analytics"), h("p", { class: "muted" }, "Activity is calculated from actual lead records. Date range: " + a.range.from + " through " + a.range.to + " (inclusive)."),
+    range,
+    h("div", { class: "stats" }, stat("Leads in range (sample size)", a.sampleSize), stat("Emergency leads", a.emergencyCount), stat("Won (owner-entered)", a.outcomes?.won), stat("Lost (owner-entered)", a.outcomes?.lost), stat("Outcome sample size", a.outcomes?.sampleSize)),
+    list("Activity by day", a.daily || [], "date"),
+    list("Issues by category", (a.categories || []).map((x) => ({ category: x.category, count: x.count })), "category"),
+    list("Lead status breakdown", a.statuses || [], "status"),
+    h("p", { class: "muted" }, a.methodology || "Counts are based on records in the selected range. No revenue or job value is inferred."));
 }
 
 async function vLeads() {
