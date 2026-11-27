@@ -246,6 +246,36 @@ describe("tenant entitlements and usage", () => {
   });
 });
 
+describe("tenant analytics", () => {
+  test("returns only this tenant's real lead counts and owner-entered outcomes", async () => {
+    const db = fresh(); const { A, B } = await seed(db);
+    const ca = await A.conversations.create();
+    const first = await A.leads.create(ca.id, lead({ issueCategory: "leak" }));
+    const cb = await A.conversations.create();
+    const second = await A.leads.create(cb.id, lead({ phone: "+15125550143", email: "b@example.com", issueCategory: "drain" }));
+    const other = await B.conversations.create();
+    await B.leads.create(other.id, lead({ phone: "+15125550199", email: "other@example.com" }));
+    await db.run("UPDATE leads SET created_at = '2026-11-10T12:00:00.000Z', status = 'won' WHERE id = ?", [first.id]);
+    await db.run("UPDATE leads SET created_at = '2026-11-11T12:00:00.000Z', status = 'new' WHERE id = ?", [second.id]);
+    const result = await A.dashboard.analytics({ from: "2026-11-01", to: "2026-11-30" });
+    assert.equal(result.sampleSize, 2);
+    assert.deepEqual(result.outcomes, { won: 1, lost: 0, sampleSize: 1 });
+    assert.deepEqual(result.daily, [{ date: "2026-11-10", leads: 1 }, { date: "2026-11-11", leads: 1 }]);
+    assert.deepEqual(result.categories.map((x) => x.category), ["drain", "leak"]);
+    assert.equal((await B.dashboard.analytics({ from: "2026-11-01", to: "2026-11-30" })).sampleSize, 1);
+    assert.match(result.methodology, /no revenue or job value is inferred/i);
+  });
+  test("rejects impossible, reversed, and oversized date ranges", async () => {
+    const { A } = await seed(fresh());
+    for (const range of [
+      { from: "2026-02-30", to: "2026-03-01" },
+      { from: "2026-11-02", to: "2026-11-01" },
+      { from: "2025-01-01", to: "2026-01-02" },
+      { from: "2026-01-01", to: "2026-01-02T00:00:00Z" },
+    ]) await assert.rejects(A.dashboard.analytics(range), (e) => e.code === "invalid_data");
+  });
+});
+
 describe("audit log", () => {
   test("records events without customer values and cannot be edited or deleted", async () => {
     const db = fresh();
