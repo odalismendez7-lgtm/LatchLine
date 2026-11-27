@@ -633,8 +633,10 @@ describe("Stage 6 deletion behavior", () => {
     await w.db.run("INSERT INTO lead_events (id, business_id, lead_id, type, detail, created_at) VALUES (?,?,?,?,?,?)", ["privacy-evt", u.bizId, leadId, "updated", JSON.stringify({ fields: ["phone"] }), new Date().toISOString()]);
     await w.db.run("INSERT INTO notifications (id, business_id, lead_id, kind, variant, priority, priority_rank, channel, idempotency_key, status, attempts, max_attempts, simulated, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", ["privacy-notif", u.bizId, leadId, "new_lead", null, "normal", 2, "email", "privacy-test-key", "queued", 0, 3, 1, new Date().toISOString(), new Date().toISOString()]);
     await w.db.run("INSERT INTO notification_attempts (id, business_id, notification_id, attempt_no, started_at, finished_at, outcome, error_code) VALUES (?,?,?,?,?,?,?,?)", ["privacy-attempt", u.bizId, "privacy-notif", 1, new Date().toISOString(), new Date().toISOString(), "accepted", null]);
+    const user = await w.db.first("SELECT id FROM users WHERE email = ?", ["privacy@acme.example"]);
+    assert.ok(user?.id, "test user must exist");
     const T = forBusiness(w.db, u.bizId);
-    await T.dashboard.deleteLead(u.userId, leadId);
+    await T.dashboard.deleteLead(user.id, leadId);
     for (const [table, column, value] of [["leads","id",leadId],["conversations","id",conversationId],["messages","id","privacy-msg"],["lead_events","id","privacy-evt"],["notifications","id","privacy-notif"],["notification_attempts","id","privacy-attempt"]]) {
       const row = await w.db.first(`SELECT 1 AS found FROM ${table} WHERE ${column} = ? AND business_id = ?`, [value, u.bizId]);
       assert.equal(row, null, `${table} should be removed`);
