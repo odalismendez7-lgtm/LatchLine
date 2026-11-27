@@ -1,6 +1,6 @@
 # Test Cases and Results
 
-Last updated: 2026-11-27 (Step 3 structured service address)
+Last updated: 2026-11-27 (Step 4 website setup onboarding)
 
 Run all tests: `npm test` (Node 22.5+, no network, no cost). The real-runtime files need the free local `wrangler` dev dependency (`npm install`); they skip with a visible reason without it.
 
@@ -8,7 +8,11 @@ Rule: nothing is called production-ready unless the required checks below have p
 
 ## 2026-11-27: Step 3 structured service address
 
-GitHub Actions PR run: [45914916015](https://github.com/odalismendez7-lgtm/LatchLine/actions/runs/45914916015) — **1,270 passed, 0 failed**. This run included the Node test suite and real Playwright/Chromium widget browser tests. The PR remains a draft against `stage-6-runtime-validation`; nothing was merged or deployed.
+GitHub Actions PR run: [45915682629](https://github.com/odalismendez7-lgtm/LatchLine/actions/runs/45915682629) — **1,272 passed, 0 failed**. This run included the Node test suite and real Playwright/Chromium widget browser tests. The PR remains a draft against `stage-6-runtime-validation`; nothing was merged or deployed.
+
+## 2026-11-27: Step 4 website setup onboarding
+
+GitHub Actions PR run: [45916853882](https://github.com/odalismendez7-lgtm/LatchLine/actions/runs/45916853882) — **1,276 passed, 0 failed**. Coverage includes authorized site-key retrieval, HTTPS-only origin validation, duplicate registration, audited origin add/remove, public widget configuration allowed only for registered origins, role-based denial, and desktop/mobile browser tests for the first-run setup page and embed snippet. This is local automated verification only; no hosted Worker, production domain, or real customer website has been connected.
 
 ## Required test categories
 
