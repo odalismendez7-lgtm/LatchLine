@@ -30,7 +30,7 @@ const B = (p) => "/api/biz/" + encodeURIComponent(S.biz.id) + p;
 const can = (a) => S.biz && S.biz.permissions.includes(a);
 const root = $("#root");
 const fmt = (s) => { try { return new Date(s).toLocaleString(); } catch (e) { return s || ""; } };
-const NICE = { auth_unavailable: "Sign-in is unavailable on this server: password protection could not run. Nothing was changed.", temporarily_unavailable: "The service is temporarily unavailable. Please try again in a few seconds.",  invalid_credentials: "Wrong email or password.", email_not_verified: "Please verify your email first.", rate_limited: "Too many attempts. Please wait and try again.", weak_password: "Use at least 12 characters and avoid common passwords.", invalid_email: "Enter a valid email address.", invalid_business_name: "Enter your business name (2–100 characters).", invalid_token: "That link is invalid or has expired.", network: "Could not reach the server.", cooldown: "Please wait a minute before requesting another code.", daily_limit: "Daily limit reached for this contact.", wrong_code: "That code is not correct.", too_many_attempts: "Too many wrong codes. Send a new code.", expired: "That code has expired. Send a new one.", no_open_code: "No active code. Send a new one.", duplicate: "That contact already exists.", invalid_contact: "That address is not valid." };
+const NICE = { auth_unavailable: "Sign-in is unavailable on this server: password protection could not run. Nothing was changed.", temporarily_unavailable: "The service is temporarily unavailable. Please try again in a few seconds.",  invalid_credentials: "Wrong email or password.", email_not_verified: "Please verify your email first.", rate_limited: "Too many attempts. Please wait and try again.", weak_password: "Use at least 12 characters and avoid common passwords.", invalid_email: "Enter a valid email address.", invalid_business_name: "Enter your business name (2–100 characters).", invalid_token: "That link is invalid or has expired.", network: "Could not reach the server.", cooldown: "Please wait a minute before requesting another code.", daily_limit: "Daily limit reached for this contact.", wrong_code: "That code is not correct.", too_many_attempts: "Too many wrong codes. Send a new code.", expired: "That code has expired. Send a new one.", no_open_code: "No active code. Send a new one.", duplicate: "That contact already exists.", invalid_contact: "That address is not valid.", invalid_origin: "Enter a website origin such as https://example.com. Do not include a page path." };
 const say = (r) => NICE[r.data.error] || NICE[r.data.code] || r.data.error || "Something went wrong.";
 
 function sessionEnded() {
@@ -94,7 +94,7 @@ async function devMailView() {
 }
 
 // ---------------- signed-in app ----------------
-const NAV = [["overview", "Overview", "overview.read"], ["leads", "Leads", "leads.read"], ["conversations", "Conversations", "conversations.read"], ["handoffs", "Handoffs", "handoffs.read"], ["notifications", "Notifications", "notifications.read"], ["settings", "Settings", "settings.read"], ["contacts", "Contacts", "contacts.read"], ["team", "Team", "team.read"], ["audit", "Audit log", "audit.read"]];
+const NAV = [["overview", "Overview", "overview.read"], ["widget", "Website setup", "settings.read"], ["leads", "Leads", "leads.read"], ["conversations", "Conversations", "conversations.read"], ["handoffs", "Handoffs", "handoffs.read"], ["notifications", "Notifications", "notifications.read"], ["settings", "Settings", "settings.read"], ["contacts", "Contacts", "contacts.read"], ["team", "Team", "team.read"], ["audit", "Audit log", "audit.read"]];
 function shell() {
   const nav = h("nav", { class: "nav", "aria-label": "Sections" }, NAV.filter((n) => can(n[2])).map((n) => h("button", { class: "navbtn" + (S.view === n[0] ? " active" : ""), "aria-current": S.view === n[0] ? "page" : null, onclick: () => { S.view = n[0]; S.openLead = null; render(); } }, n[1])));
   const sel = S.me.businesses.length > 1 ? h("select", { "aria-label": "Business", onchange: (e) => { S.biz = S.me.businesses.find((b) => b.id === e.target.value); S.view = "overview"; render(); } }, S.me.businesses.map((b) => h("option", { value: b.id, selected: b.id === S.biz.id }, b.name + " (" + b.role + ")"))) : h("span", { class: "bizname" }, S.biz.name + " · " + S.biz.role);
@@ -106,7 +106,7 @@ async function render() {
   shell();
   paintToast();
   const m = $("#main"); m.replaceChildren(h("p", { class: "muted" }, "Loading…"));
-  const views = { overview: vOverview, leads: vLeads, conversations: vConvs, handoffs: vHandoffs, notifications: vNotifs, settings: vSettings, contacts: vContacts, team: vTeam, audit: vAudit };
+  const views = { overview: vOverview, widget: vWidget, leads: vLeads, conversations: vConvs, handoffs: vHandoffs, notifications: vNotifs, settings: vSettings, contacts: vContacts, team: vTeam, audit: vAudit };
   try { const node = await views[S.view](); m.replaceChildren(node); } catch (e) { m.replaceChildren(h("p", { class: "bad" }, "Could not load this section.")); }
 }
 const chip = (t, cls) => h("span", { class: "chip " + (cls || "") }, t);
@@ -119,8 +119,11 @@ function tbl(cols, rows) {
 
 async function vOverview() {
   const r = await api("GET", B("/overview")); const o = r.data.overview || {};
+  const setup = can("settings.read") ? await api("GET", B("/widget")) : null;
+  const needsSetup = setup?.ok && !setup.data.origins?.length;
   const card = (label, n, cls, go) => h("button", { class: "stat " + (cls || ""), onclick: go }, h("span", { class: "num" }, String(n ?? 0)), h("span", null, label));
   return h("section", null, h("h2", null, "Overview"),
+    needsSetup ? h("p", { class: "alert" }, "Your website chat is not connected yet. Register your website and install the widget to start receiving inquiries. ", h("button", { class: "btn", onclick: () => { S.view = "widget"; render(); } }, "Set up website chat")) : null,
     h("div", { class: "stats" }, card("New leads", o.leadsNew, "", () => { S.view = "leads"; S.filter = { status: "new" }; render(); }), card("Urgent, not yet handled", o.urgentOpen, o.urgentOpen ? "urgent" : "", () => { S.view = "leads"; S.filter = { urgent: "1" }; render(); }), card("Emergencies with no contact details", o.incompleteEmergency, o.incompleteEmergency ? "urgent" : "", () => { S.view = "leads"; S.filter = { urgent: "1", incomplete: "1" }; render(); }), card("Waiting for a human", o.handoffsOpen, "", () => { S.view = "handoffs"; render(); }), card("All leads", o.leadsTotal, "", () => { S.view = "leads"; S.filter = {}; render(); }), card("Conversations", o.conversationsTotal, "", () => { S.view = "conversations"; render(); })),
     r.data.notificationsNeedingAttention ? h("p", { class: "alert" }, r.data.notificationsNeedingAttention + " notification(s) need attention — the business may NOT have been told about them. ", h("a", { href: "#", onclick: (e) => { e.preventDefault(); S.view = "notifications"; render(); } }, "Review")) : null,
     h("p", { class: "muted" }, "Notifications in this build are SIMULATED (mock provider). No real email or text is sent."));
@@ -181,6 +184,40 @@ async function vNotifs() {
     att.length ? h("div", { class: "alert" }, h("strong", null, "Needs attention"), h("ul", { class: "plain" }, att.map((n) => h("li", null, n.kind + " · " + n.priority + " — " + n.description)))) : null,
     list.length ? tbl(["When", "Kind", "Priority", "Channel", "Status", "What it means"], list.map((n) => h("tr", null, h("td", null, fmt(n.created_at)), h("td", null, n.kind), h("td", null, n.priority === "emergency" ? chip("EMERGENCY", "urgent") : n.priority), h("td", null, n.channel), h("td", null, chip(n.status), n.simulated ? chip("simulated", "sim") : null), h("td", null, n.description)))) : empty("No notifications yet."));
 }
+async function vWidget() {
+  const r = await api("GET", B("/widget"));
+  if (!r.ok) return h("section", null, h("h2", null, "Website setup"), h("p", { class: "bad" }, say(r)));
+  const s = r.data, snippet = '<script src="' + location.origin + '/widget.js" data-site-key="' + s.siteKey + '"></script>';
+  const w = can("settings.write");
+  const form = h("form", { class: "filters", onsubmit: async (e) => {
+    e.preventDefault(); const v = vals(e.target);
+    const x = await api("POST", B("/widget/origins"), { origin: v.origin });
+    if (x.ok) { toast(x.data.added ? "Website origin added." : "That origin is already registered."); render(); }
+    else toast(say(x), true);
+  } },
+    h("label", null, "Website origin", h("input", { name: "origin", type: "url", placeholder: "https://example.com", required: true, maxlength: 200, disabled: !w })),
+    w ? h("button", { class: "btn primary", type: "submit" }, "Add website") : null);
+  const origins = s.origins.length ? h("ul", { class: "plain" }, s.origins.map((origin) => h("li", null, h("code", null, origin), w ? h("button", { class: "btn danger", onclick: async () => {
+    if (!window.confirm("Remove " + origin + "? The widget will stop working on that website.")) return;
+    const x = await api("DELETE", B("/widget/origins"), { origin });
+    if (x.ok) { toast("Website origin removed."); render(); } else toast(say(x), true);
+  } }, "Remove") : null))) : h("p", { class: "muted" }, "No website origins are registered. The widget will not load until you add one.");
+  return h("section", null,
+    h("h2", null, "Website setup"),
+    h("p", null, "Connect the website where customers should see your LATCHLINE plumbing assistant."),
+    h("h3", null, "1. Register your website"),
+    h("p", { class: "muted" }, "Enter the website origin only — for example https://example.com. Do not include a page path. HTTPS is required except for localhost development."),
+    w ? form : h("p", { class: "muted" }, "Your role can view setup but cannot change registered websites."),
+    origins,
+    h("h3", null, "2. Install the chat widget"),
+    h("p", { class: "muted" }, "Copy this script into your website, ideally just before the closing body tag. The site key is public widget configuration, not a password or authentication credential."),
+    h("pre", { class: "snippet" }, snippet),
+    h("button", { class: "btn primary", onclick: async () => { try { await navigator.clipboard.writeText(snippet); toast("Install code copied."); } catch { toast("Copy is unavailable here. Select the code above and copy it manually.", true); } } }, "Copy install code"),
+    h("p", { class: "muted" }, "After installation, open your website and send a test message. Origin checks help restrict normal browser embedding, but an Origin header is not authentication and can be spoofed by non-browser clients."),
+    h("p", { class: "muted" }, "Widget host: ", h("code", null, location.origin + "/widget.js"))
+  );
+}
+
 async function vSettings() {
   const r = await api("GET", B("/settings")); const s = r.data.settings || {}; const w = can("settings.write");
   const ta = (label, name, v, hint) => h("label", null, label, hint ? h("small", null, hint) : null, h("textarea", { name, rows: 2, maxlength: 600, disabled: !w }, v || ""));
