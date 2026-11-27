@@ -10,9 +10,9 @@ Rule: nothing is called production-ready unless the required checks below have p
 
 GitHub Actions PR run: [45915682629](https://github.com/odalismendez7-lgtm/LatchLine/actions/runs/45915682629) — **1,272 passed, 0 failed**. This run included the Node test suite and real Playwright/Chromium widget browser tests. The PR remains a draft against `stage-6-runtime-validation`; nothing was merged or deployed.
 
-## 2026-11-27: Step 4 website setup onboarding
+## 2026-11-27: Step 4 business dashboard and onboarding
 
-GitHub Actions PR run: [45916853882](https://github.com/odalismendez7-lgtm/LatchLine/actions/runs/45916853882) — **1,276 passed, 0 failed**. Coverage includes authorized site-key retrieval, HTTPS-only origin validation, duplicate registration, audited origin add/remove, public widget configuration allowed only for registered origins, role-based denial, and desktop/mobile browser tests for the first-run setup page and embed snippet. This is local automated verification only; no hosted Worker, production domain, or real customer website has been connected.
+GitHub Actions PR run: [45917728636](https://github.com/odalismendez7-lgtm/LatchLine/actions/runs/45917728636) — **1,276 passed, 0 failed**. Coverage includes authorized site-key retrieval, HTTPS-only origin validation, duplicate registration, audited origin add/remove, public widget configuration allowed only for registered origins, role-based denial, the first-run checklist, and desktop/mobile browser tests for website setup and the embed snippet. This is local automated verification only; no hosted Worker, production domain, or real customer website has been connected.
 
 ## Required test categories
 
