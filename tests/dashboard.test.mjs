@@ -8,18 +8,27 @@ import { MockMailer } from "../src/auth/mailer.js";
 import { MockNotifier } from "../src/notify/mock.js";
 import { dispatchDue } from "../src/notify/dispatcher.js";
 import { createApp } from "../src/app.js";
-import { maskLead } from "../src/dashboard/authz.js";
+import { maskLead, maskMessages } from "../src/dashboard/authz.js";
 
 const ORIGIN = "http://localhost";
 const PW = "correct horse battery staple";
 
-test("property addresses are fully hidden from roles without contact permission", () => {
-  const lead = { address_line1: "123 Main St", address_line2: "Apt 4", city: "Bronx", state: "NY", zip: "10467" };
+test("property addresses are hidden from viewers in structured fields and free text", () => {
+  const lead = {
+    address_line1: "123 Main St", address_line2: "Apt 4", city: "Bronx", state: "NY", zip: "10467",
+    issue_text: "Kitchen faucet leaking at 123 Main St, Apt 4, Bronx, NY 10467",
+    summary: "123 Main St, Apt 4, Bronx, NY 10467: kitchen faucet leaking",
+  };
   const viewer = maskLead(lead, "viewer");
   for (const field of ["address_line1", "address_line2", "city", "state"]) assert.equal(viewer[field], "[hidden]");
   assert.equal(viewer.zip, "10467");
+  assert.doesNotMatch(viewer.issue_text, /123 Main|Bronx|Apt 4/i);
+  assert.doesNotMatch(viewer.summary, /123 Main|Bronx|Apt 4/i);
   const owner = maskLead(lead, "owner");
   assert.equal(owner.address_line1, "123 Main St");
+  assert.match(owner.issue_text, /123 Main St/);
+  const messages = maskMessages([{ role: "customer", content: "Please come to 55 West 42nd Avenue, New York, NY 10036." }], "viewer");
+  assert.doesNotMatch(messages[0].content, /55 West 42nd|New York/i);
 });
 
 export async function makeWorld({ devMode = false } = {}) {
