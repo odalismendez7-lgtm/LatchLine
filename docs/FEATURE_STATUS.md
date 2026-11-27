@@ -1,6 +1,6 @@
 # Feature Status
 
-Last updated: 2026-11-26 (OpenAI adapter code added; mocked tests only)
+Last updated: 2026-11-27 (Stage 7 entitlement schema scaffold; Stage 6 retention integration CI pending)
 
 A feature is **Done** only when it is implemented, tested (tests passing and recorded in `TEST_CASES.md`), and reviewed. Nothing below is Done yet, including after Stage 6. "In progress" means part is built and tested but the requirement is not yet met. "Prototype" means a stand-in that does not meet the requirement.
 
