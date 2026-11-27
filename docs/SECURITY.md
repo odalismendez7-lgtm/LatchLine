@@ -28,11 +28,11 @@ This repository may be **public**. Never commit secrets, customer data, real bus
 | Tenant isolation | Frozen per-business handles, `business_id` bound in every statement (SQL-spy test), composite foreign keys, cross-tenant read/write/merge tests, business chosen only by site key + registered origin | Never tested on real D1; no owner auth |
 | Database safety | Parameterized queries only; CHECK constraints; hostile-id tests; append-only audit log via triggers | No least-privilege roles (single binding); no encryption beyond the host's |
 | API protection | Per-client and per-business rate limits, 429 + Retry-After, 8 KB body limit, strict JSON checks, per-business CORS, no internals in errors, `no-store`/`nosniff` | IP-based limits only; origin is not authentication (KI-6); no bot protection |
-| Input validation | Message, phone, email, ZIP, name validators; text stored as inert data (render must escape; the demo page uses `textContent`) | Dashboard output escaping not built |
+| Input validation | Message, phone, email, ZIP, name, and structured street-address validators; multiline address payloads rejected; text stored as inert data (render must escape; the demo page uses `textContent`) | Dashboard output escaping not built |
 | AI-specific | Customer text only in user messages; guard rejects promises/prices/times/phones/links; mock text hidden | Never tested against a real model (KI-19) |
 | Audit | Business, lead, knowledge, contact, and notification events without customer values or addresses | Logins/permission failures (no auth) |
 | Notifications | Per-business outbox with composite foreign keys; only verified, enabled contacts used; text built only from that business's own lead; header/control-character stripping; idempotent; error codes only (no text) stored; real providers refused by the registry | Contact verification flow (KI-25); notification volume caps (KI-27); privacy review (KI-26); webhook signature checks (none exist yet) |
-| Privacy | Only needed fields collected; no passwords or cards requested | No retention/deletion policy, no encryption at app level, plain-text PII (KI-17) |
+| Privacy | Only needed fields collected; no passwords or cards requested; viewer role masks structured street address fields and common street-address patterns in lead free text and conversation messages | No retention/deletion policy, no encryption at app level, plain-text PII (KI-17) |
 
 ## Implemented in Stage 5 (DEMO authentication, not production-ready)
 
