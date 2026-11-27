@@ -1,6 +1,6 @@
 # Roadmap and Future Improvements
 
-Last updated: 2026-11-24 · Each stage ends with: what was built, files changed, tests run, errors/limitations, next step. Nothing deploys publicly or costs money without founder approval.
+Last updated: 2026-11-27 · Each stage ends with: what was built, files changed, tests run, errors/limitations, next step. Nothing deploys publicly or costs money without founder approval.
 
 ## Stages
 
