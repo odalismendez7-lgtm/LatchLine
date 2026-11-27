@@ -108,7 +108,7 @@ export function createApp({ db, router = null, store, salt, clientLimit = { limi
   };
 
   async function runScheduled() {
-    const out = { reconciled: 0, errors: [], dispatch: null };
+    const out = { reconciled: 0, retentionDeleted: 0, errors: [], dispatch: null };\n    const retentionCutoff = new Date(now()); retentionCutoff.setFullYear(retentionCutoff.getFullYear() - 1);
     try {
       for (const id of await platform.activeBusinessIds()) {
         try { out.reconciled += (await forBusiness(db, id).notifications.reconcileMissing({ now: new Date(now()).toISOString() })).enqueued; }
