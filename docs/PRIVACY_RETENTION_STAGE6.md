@@ -51,3 +51,17 @@ These are schema-level effects, not proof that an end-user deletion workflow exi
 - [ ] Tests cover foreign tenant denial, partial-failure rollback, repeat deletion, dependent rows, and post-delete verification.
 - [ ] Backup/provider/log retention is documented and verified or clearly stated as a limitation.
 - [ ] No production/legal-compliance claim is made without independent review.
+
+
+## Founder product requirement: plumbing-only intake (approved direction)
+
+The customer-facing assistant is a service-intake and scheduling assistant, not a general-purpose personal-data collector. The desired intake flow is:
+1. Customer selects a plumbing issue category (e.g. leak, clog/drain, water heater, pipe repair, installation, other).
+2. Customer describes the plumbing issue briefly.
+3. Request service address, because dispatch requires it.
+4. Request customer name and phone number for service follow-up; email is optional and should be requested only where the business needs it.
+5. Summarize the request and submit it to the plumbing team; avoid claiming that submission, notification or booking occurred unless confirmed.
+
+Collection boundaries: do not solicit Social Security numbers, payment-card numbers, banking credentials, passwords, identity-document details, or unrelated sensitive information. If customers volunteer such information, the assistant should not ask them to repeat it or include it in the service summary; where practical, warn them not to share it and minimize its storage and transfer. Avoid storing/echoing unnecessary sensitive content. No unrelated marketing, sale, or sharing of customer information is intended by this product direction.
+
+This is an approved product requirement, not yet a claim that all controls are implemented or that legal compliance is established. AI-provider processing is still processing/sharing with a provider and must be minimized, disclosed accurately, and configured with provider retention settings reviewed before live use. Email is optional for intake. The implementation and tests must ensure this structured flow and validate its behavior before release.
