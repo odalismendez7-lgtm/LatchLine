@@ -65,3 +65,29 @@ The customer-facing assistant is a service-intake and scheduling assistant, not 
 Collection boundaries: do not solicit Social Security numbers, payment-card numbers, banking credentials, passwords, identity-document details, or unrelated sensitive information. If customers volunteer such information, the assistant should not ask them to repeat it or include it in the service summary; where practical, warn them not to share it and minimize its storage and transfer. Avoid storing/echoing unnecessary sensitive content. No unrelated marketing, sale, or sharing of customer information is intended by this product direction.
 
 This is an approved product requirement, not yet a claim that all controls are implemented or that legal compliance is established. AI-provider processing is still processing/sharing with a provider and must be minimized, disclosed accurately, and configured with provider retention settings reviewed before live use. Email is optional for intake. The implementation and tests must ensure this structured flow and validate its behavior before release.
+
+
+## Customer notice draft (not yet approved or displayed in the widget)
+
+Use this only as a starting point for a plumbing business's own notice. The business must customize it, verify its providers and operational practices, and review it before publishing:
+
+> This chat helps collect plumbing service requests for [Business]. We may ask for a brief description of the problem, the property's ZIP code and street address, and a name and phone number so the team can follow up. Email is optional. Do not send passwords, payment-card details, bank information, Social Security numbers, or other sensitive information here. Your request is submitted to the plumbing business for service follow-up; this chat does not itself schedule or dispatch a technician. The chat may be processed by an AI service to help answer questions and organize the request. [Business] should insert the name of its AI provider and link to its applicable privacy notice, describe any notification providers, and explain retention and deletion practices after confirming them.
+
+This wording deliberately does **not** promise that data is never shared, that AI-provider retention is zero, that a technician is dispatched, or that the business has received a request before a confirmed save/notification result. It is a draft, not a legal notice or verified disclosure.
+
+## Release privacy checklist (engineering gate)
+
+- [ ] Configure only necessary AI context: avoid forwarding unrelated conversation history, volunteered sensitive information, or contact/address fields when they are not needed for the AI task. Confirm this from request-level tests and provider configuration, not documentation alone.
+- [ ] Identify the actual AI, hosting, analytics/logging, email and SMS providers; verify their retention, training/use, access and deletion settings and document their role before enabling them.
+- [ ] Inspect logs, exception traces, analytics, debug mailbox and audit detail for PII leakage using seeded test values and automated assertions.
+- [ ] Confirm that sensitive volunteered text is not echoed into summaries, notifications, audit details or AI payloads unnecessarily; document cases where redaction cannot be reliably detected.
+- [ ] Give customers and business owners an accurate notice and a usable deletion-request path. The notice must describe limits for backups and third-party copies.
+- [ ] Obtain founder approval for a retention schedule and legal review where appropriate; only then implement and test retention enforcement. The proposed 12-month period is still not approved.
+
+## Known current limitations
+
+- The customer widget has not yet been proven to present the above privacy notice or enforce all collection boundaries.
+- Free-text redaction and viewer-role masking are heuristic protections, not a complete sensitive-data detection system; privileged owner/staff views may still expose stored customer details.
+- Real provider payloads, their retention behavior, and deletion propagation have not been independently verified. Current provider integrations remain mock/default or unconfigured.
+- Business/account-wide deletion, data export/deletion request workflows, and automatic retention enforcement are not implemented.
+- The append-only audit design preserves identifiers and details across deletion; audit retention is unresolved.
