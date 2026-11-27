@@ -1,10 +1,14 @@
 # Test Cases and Results
 
-Last updated: 2026-11-21 (Stage 6 runtime validation)
+Last updated: 2026-11-27 (Step 3 structured service address)
 
 Run all tests: `npm test` (Node 22.5+, no network, no cost). The real-runtime files need the free local `wrangler` dev dependency (`npm install`); they skip with a visible reason without it.
 
 Rule: nothing is called production-ready unless the required checks below have passed and the result is recorded here with a date. "TODO" tests are required behavior that does not exist yet. They are expected to fail, are shown as failing, and are never counted as passing.
+
+## 2026-11-27: Step 3 structured service address
+
+GitHub Actions PR run: [45914916015](https://github.com/odalismendez7-lgtm/LatchLine/actions/runs/45914916015) — **1,270 passed, 0 failed**. This run included the Node test suite and real Playwright/Chromium widget browser tests. The PR remains a draft against `stage-6-runtime-validation`; nothing was merged or deployed.
 
 ## Required test categories
 
@@ -14,6 +18,7 @@ Rule: nothing is called production-ready unless the required checks below have p
 | Incorrect or missing information | Validation tests (96) and in-conversation rejections pass: bad phones, names, ZIPs, injection-like names. ZIP outside the verified list is stored "unconfirmed", never refused |
 | Emergency conversations | 164 safety tests pass (99 + 65 Stage 3: Spanish, water heater, generic emergency, negation fixes). Engine tests confirm safety replies work with the database down, the AI down, and the message cap reached |
 | Lead capture | Pass: saved only after transaction + readback; failures reported as NOT saved; retry after recovery saves once; fake-success database detected |
+| Structured service address | Pass: customer-supplied address parsed into street, unit, city, state; optional prompt/skip; no blocking when urgency, handoff, ZIP decline, or frustration takes priority; malformed and multiline input rejected; address hidden from roles without contact permission. No geocoding/USPS validation |
 | Failed notifications | Pass with the mock: provider outage, permanent error, malformed response, timeout, unknown exception, database failure before/after provider acceptance, crashed dispatcher (lease), retry/backoff, exhaustion to `failed` and `needsAttention`. Real providers untested (KI-24) |
 | Human handoff | Pass: phrase detection (positive and negative), honest "cannot connect live", handoff notification queued with the lead, repeated requests deduplicated, "NOT received" when it cannot be recorded, emergency priority carried. No live transfer exists |
 | AI service outages | Router tests plus engine tests: outage gives an honest fallback and a degraded flag; mock text hidden; unsafe AI replies replaced |
