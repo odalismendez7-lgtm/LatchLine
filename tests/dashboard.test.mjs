@@ -618,3 +618,30 @@ describe("Stage 5 repositories are tenant-scoped (SQL spy)", () => {
     }
   });
 });
+
+
+describe("Stage 6 deletion behavior", () => {
+  test("deleting a lead removes its conversation, messages, lead events and notifications but keeps a minimal audit record", async () => {
+    const w = await makeWorld();
+    const u = await w.signup("privacy@acme.example");
+    const { leadId } = await w.seedLead(u.bizId);
+    const lead = await w.db.first("SELECT conversation_id FROM leads WHERE id = ? AND business_id = ?", [leadId, u.bizId]);
+    assert.ok(lead);
+    const conversationId = lead.conversation_id;
+    // Seed a message and a lead event so cascade behavior is checked, not assumed.
+    await w.db.run("INSERT INTO messages (id, business_id, conversation_id, role, content, created_at) VALUES (?,?,?,?,?,?)", ["privacy-msg", u.bizId, conversationId, "customer", "Private customer text", new Date().toISOString()]);
+    await w.db.run("INSERT INTO lead_events (id, business_id, lead_id, type, detail, created_at) VALUES (?,?,?,?,?,?)", ["privacy-evt", u.bizId, leadId, "updated", JSON.stringify({ fields: ["phone"] }), new Date().toISOString()]);
+    await w.db.run("INSERT INTO notifications (id, business_id, lead_id, kind, variant, priority, channel, status, attempts, simulated, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)", ["privacy-notif", u.bizId, leadId, "lead_created", "initial", "normal", "email", "pending", 0, 1, new Date().toISOString()]);
+    const T = forBusiness(w.db, u.bizId);
+    await T.dashboard.deleteLead(u.userId, leadId);
+    for (const [table, column, value] of [["leads","id",leadId],["conversations","id",conversationId],["messages","id","privacy-msg"],["lead_events","id","privacy-evt"],["notifications","id","privacy-notif"]]) {
+      const row = await w.db.first(`SELECT 1 AS found FROM ${table} WHERE ${column} = ? AND business_id = ?`, [value, u.bizId]);
+      assert.equal(row, null, `${table} should be removed`);
+    }
+    const audit = await w.db.first("SELECT action, target, detail FROM audit_log WHERE business_id = ? AND action = 'lead_deleted' ORDER BY created_at DESC LIMIT 1", [u.bizId]);
+    assert.ok(audit);
+    assert.equal(audit.target, leadId);
+    assert.doesNotMatch(audit.detail, /Private customer text|@|\\+1/);
+    await assert.rejects(() => T.dashboard.deleteLead(u.userId, leadId), (e) => e.code === "not_found");
+  });
+});
