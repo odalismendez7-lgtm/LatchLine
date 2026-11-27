@@ -128,7 +128,7 @@ export function createDashboardApi({ db, auth, mailer, now = Date.now, devMode =
       const bizId = decodeURIComponent(m[1]);
       const parts = m[2].split("/").map(decodeURIComponent);
       const R = {
-        "GET overview": ["overview.read"], "GET leads": ["leads.read"], "GET leads/export.csv": ["leads.export"], "GET leads/:id": ["leads.read"],
+        "GET overview": ["overview.read"], "GET analytics": ["overview.read"], "GET leads": ["leads.read"], "GET leads/export.csv": ["leads.export"], "GET leads/:id": ["leads.read"],
         "PATCH leads/:id": ["leads.update_status"], "DELETE leads/:id": ["leads.delete"],
         "GET conversations": ["conversations.read"], "GET conversations/:id": ["conversations.read"], "GET handoffs": ["handoffs.read"], "GET notifications": ["notifications.read"],
         "GET settings": ["settings.read"], "PUT settings": ["settings.write"],
@@ -169,6 +169,7 @@ export function createDashboardApi({ db, auth, mailer, now = Date.now, devMode =
         case "GET privacy/export": { const bundle = await T.dashboard.exportPrivacyBundle(); await T.dashboard.recordExport(actor, bundle.leads.length); return out({ exportedAt: new Date(now()).toISOString(), data: bundle }); }
         case "POST privacy/retention-run": { const cutoff = new Date(now() - 365 * 24 * 60 * 60 * 1000).toISOString(); const result = await T.dashboard.expireCustomerData(actor, cutoff, 100); return out({ ok: true, cutoff, ...result }); }
         case "GET overview": return out({ role, overview: await T.dashboard.overview(), notificationsNeedingAttention: can(role, "notifications.read") ? (await T.notifications.needsAttention({ now: new Date(now()).toISOString() })).length : undefined });
+        case "GET analytics": { try { const from = q.get("from"), to = q.get("to"); return out({ analytics: await T.dashboard.analytics({ from, to }) }); } catch (e) { return e?.code === "invalid_data" ? err(400, "A valid date range of up to 366 days is required") : dbErr(e); } }
         case "GET widget": {
           const settings = await platform.widgetSettingsForBusiness(bizId);
           return settings ? out({ siteKey: settings.siteKey, origins: settings.origins }) : err(404, "Not found");
