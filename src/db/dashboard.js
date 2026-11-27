@@ -127,6 +127,27 @@ export function dashboardRepo(db, B) {
         return rows.map((r) => ({ ...r, urgent: !!r.urgent }));
       });
     },
+    async exportPrivacyBundle() {
+      return guard(async () => {
+        const leads = await db.all("SELECT * FROM leads WHERE business_id = ? ORDER BY created_at", [B]);
+        const conversations = await db.all("SELECT id, status, state, urgent, lead_id, message_count, created_at, updated_at FROM conversations WHERE business_id = ? ORDER BY created_at", [B]);
+        const messages = await db.all("SELECT id, conversation_id, role, content, meta, created_at FROM messages WHERE business_id = ? ORDER BY created_at", [B]);
+        const events = await db.all("SELECT id, lead_id, type, detail, created_at FROM lead_events WHERE business_id = ? ORDER BY created_at", [B]);
+        const notifications = await db.all("SELECT id, lead_id, kind, priority, channel, recipient, status, attempts, created_at, updated_at FROM notifications WHERE business_id = ? ORDER BY created_at", [B]);
+        return { leads, conversations, messages, events, notifications };
+      });
+    },
+    async expireCustomerData(actorId, cutoffIso, limit = 100) {
+      return guard(async () => {
+        const safeLimit = clamp(limit, 1, 250, 100);
+        const ids = await db.all(`SELECT c.id FROM conversations c WHERE c.business_id = ? AND COALESCE((SELECT MAX(m.created_at) FROM messages m WHERE m.business_id = c.business_id AND m.conversation_id = c.id AND m.role = 'customer'), c.created_at) < ? ORDER BY c.created_at LIMIT ?`, [B, cutoffIso, safeLimit]);
+        for (const row of ids) {
+          await db.run("DELETE FROM conversations WHERE id = ? AND business_id = ?", [row.id, B]);
+          await db.run("INSERT INTO audit_log (id, business_id, actor, action, target, detail, created_at) VALUES (?,?,?,?,?,?,?)", [newId("aud"), B, actorId, "retention_expired", row.id, json({ policy: "12_months" }), nowIso()]);
+        }
+        return { deleted: ids.length, hasMore: ids.length === safeLimit };
+      });
+    },
     async notificationHistory(limit = 50) {
       return guard(async () => db.all(
         `SELECT id, lead_id, kind, variant, priority, channel, status, attempts, last_error, simulated, created_at, sent_at
