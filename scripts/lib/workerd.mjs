@@ -47,7 +47,11 @@ export async function startWorkerd({ config, persist, port = freePort(), vars = 
   const exited = new Promise((r) => child.on("exit", (code, sig) => r({ code, sig })));
   const start = Date.now();
   while (!/Ready on http/.test(output)) {
-    if (child.exitCode !== null) {\n      const failure = output.slice(-1500);\n      if (/Address already in use|EADDRINUSE/i.test(failure) && retries > 0) return startWorkerd({ config, persist, port: freePort(), vars, timeoutMs, testScheduled, retries: retries - 1 });\n      throw new Error(`wrangler exited early:\n${failure}`);\n    }
+    if (child.exitCode !== null) {
+      const failure = output.slice(-1500);
+      if (/Address already in use|EADDRINUSE/i.test(failure) && retries > 0) return startWorkerd({ config, persist, port: freePort(), vars, timeoutMs, testScheduled, retries: retries - 1 });
+      throw new Error(`wrangler exited early:\n${failure}`);
+    }
     if (Date.now() - start > timeoutMs) { try { process.kill(-child.pid, "SIGKILL"); } catch { /* gone */ } throw new Error(`wrangler did not become ready:\n${output.slice(-1500)}`); }
     await new Promise((r) => setTimeout(r, 100));
   }
