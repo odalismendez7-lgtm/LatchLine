@@ -76,6 +76,38 @@ export async function makeWorld({ devMode = false } = {}) {
   return { db, mailer, app, call, signup, login, api, seedLead };
 }
 
+describe("website widget onboarding", () => {
+  test("owner can read the public site key and manage only that business's HTTPS origins", async () => {
+    const w = await makeWorld(); const u = await w.signup("widget-owner@acme.example"); const A = w.api(u);
+    const initial = await A.get("/widget");
+    assert.equal(initial.status, 200);
+    assert.match(initial.data.siteKey, /^sk_[A-Za-z0-9_-]{20,}$/);
+    assert.deepEqual(initial.data.origins, []);
+    assert.equal((await A.send("POST", "/widget/origins", { origin: "https://example.com/path" })).status, 400);
+    assert.equal((await A.send("POST", "/widget/origins", { origin: "http://example.com" })).status, 400);
+    assert.equal((await A.send("POST", "/widget/origins", { origin: "https://user:pass@example.com" })).status, 400);
+    const added = await A.send("POST", "/widget/origins", { origin: "https://www.example.com/" });
+    assert.equal(added.status, 201);
+    assert.deepEqual(added.data.origins, ["https://www.example.com"]);
+    const duplicate = await A.send("POST", "/widget/origins", { origin: "https://www.example.com" });
+    assert.equal(duplicate.status, 200);
+    assert.equal(duplicate.data.added, false);
+    const removed = await A.send("DELETE", "/widget/origins", { origin: "https://www.example.com" });
+    assert.equal(removed.status, 200);
+    assert.deepEqual(removed.data.origins, []);
+    assert.equal((await A.send("DELETE", "/widget/origins", { origin: "https://www.example.com" })).status, 404);
+    const events = (await A.get("/audit")).data.events;
+    assert.ok(events.some((e) => e.action === "website_origin_added" && e.detail.origin === "https://www.example.com"));
+    assert.ok(events.some((e) => e.action === "website_origin_removed" && e.detail.origin === "https://www.example.com"));
+  });
+  test("website widget configuration is not exposed to roles without settings permission", async () => {
+    const w = await makeWorld(); const u = await w.signup("widget-viewer@acme.example");
+    await w.db.run("UPDATE memberships SET role = 'viewer' WHERE business_id = ?", [u.bizId]);
+    assert.equal((await w.api(u).get("/widget")).status, 403);
+    assert.equal((await w.api(u).send("POST", "/widget/origins", { origin: "https://example.com" })).status, 403);
+  });
+});
+
 describe("authentication over HTTP", () => {
   test("login sets an HttpOnly SameSite=Strict cookie and never puts the token in the body", async () => {
     const w = await makeWorld();
