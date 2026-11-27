@@ -16,8 +16,19 @@ import { actionsFor, can } from "../auth/permissions.js";
 import { describeStatus } from "../notify/status.js";
 import { randomToken, sha256Hex } from "../auth/crypto.js";
 import { normalizeEmail } from "../validation/normalize.js";
+import { platformRepo } from "../db/tenant.js";
 
 const MAX_BODY = 16 * 1024;
+const normalizeWebsiteOrigin = (input) => {
+  if (typeof input !== "string" || input.trim().length < 8 || input.trim().length > 200) return null;
+  try {
+    const u = new URL(input.trim());
+    const local = u.hostname === "localhost" || u.hostname.endsWith(".localhost") || u.hostname === "127.0.0.1" || u.hostname === "[::1]";
+    if (u.username || u.password || u.pathname !== "/" || u.search || u.hash || u.origin === "null") return null;
+    if (u.protocol !== "https:" && !(u.protocol === "http:" && local)) return null;
+    return u.origin;
+  } catch { return null; }
+};
 const H = { "Content-Type": "application/json", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer", "X-Frame-Options": "DENY" };
 const out = (data, status = 200, extra = {}) => new Response(JSON.stringify(data), { status, headers: { ...H, ...extra } });
 const err = (status, error, extra = {}) => out({ error, ...extra }, status, (status === 429 || status === 503) && extra.retryAfterSec ? { "Retry-After": String(extra.retryAfterSec) } : {});
@@ -34,6 +45,7 @@ const csvCell = (v) => { let s = v == null ? "" : String(v); if (/^[=+\-@\t\r]/.
 
 export function createDashboardApi({ db, auth, mailer, now = Date.now, devMode = false }) {
   const cfg = auth.config;
+  const platform = platformRepo(db);
 
   const cookieName = (secure) => (secure ? "__Host-ll_session" : "ll_session");
   const setCookie = (secure, token, maxAgeSec) => `${cookieName(secure)}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAgeSec}${secure ? "; Secure" : ""}`;
@@ -120,6 +132,7 @@ export function createDashboardApi({ db, auth, mailer, now = Date.now, devMode =
         "PATCH leads/:id": ["leads.update_status"], "DELETE leads/:id": ["leads.delete"],
         "GET conversations": ["conversations.read"], "GET conversations/:id": ["conversations.read"], "GET handoffs": ["handoffs.read"], "GET notifications": ["notifications.read"],
         "GET settings": ["settings.read"], "PUT settings": ["settings.write"],
+        "GET widget": ["settings.read"], "POST widget/origins": ["settings.write"], "DELETE widget/origins": ["settings.write"],
         "GET contacts": ["contacts.read"], "POST contacts": ["contacts.write"], "DELETE contacts/:id": ["contacts.write"], "PATCH contacts/:id": ["contacts.write"],
         "POST contacts/:id/send-code": ["contacts.write"], "POST contacts/:id/confirm": ["contacts.write"],
         "GET team": ["team.read"], "POST team/invitations": ["team.write"], "DELETE team/invitations/:id": ["team.write"], "PATCH team/members/:id": ["team.write"], "DELETE team/members/:id": ["team.write"],
@@ -152,6 +165,28 @@ export function createDashboardApi({ db, auth, mailer, now = Date.now, devMode =
 
       switch (key) {
         case "GET overview": return out({ role, overview: await T.dashboard.overview(), notificationsNeedingAttention: can(role, "notifications.read") ? (await T.notifications.needsAttention({ now: new Date(now()).toISOString() })).length : undefined });
+        case "GET widget": {
+          const settings = await platform.widgetSettingsForBusiness(bizId);
+          return settings ? out({ siteKey: settings.siteKey, origins: settings.origins }) : err(404, "Not found");
+        }
+        case "POST widget/origins": {
+          const origin = normalizeWebsiteOrigin(body.origin);
+          if (!origin) return err(400, "invalid_origin");
+          const result = await platform.addBusinessOrigin(bizId, origin);
+          if (result.added) await T.members.record(actor, "website_origin_added", null, { origin });
+          const settings = await platform.widgetSettingsForBusiness(bizId);
+          if (!settings) return err(404, "Not found");
+          return out({ ok: true, added: result.added, origins: settings.origins }, result.added ? 201 : 200);
+        }
+        case "DELETE widget/origins": {
+          const origin = normalizeWebsiteOrigin(body.origin);
+          if (!origin) return err(400, "invalid_origin");
+          const result = await platform.removeBusinessOrigin(bizId, origin);
+          if (!result.removed) return err(404, "not_found");
+          await T.members.record(actor, "website_origin_removed", null, { origin });
+          const settings = await platform.widgetSettingsForBusiness(bizId);
+          return out({ ok: true, origins: settings?.origins ?? [] });
+        }
         case "GET leads": {
           let r; try { r = await T.dashboard.searchLeads({ status: q.get("status"), urgent: q.get("urgent"), incomplete: q.get("incomplete"), q: q.get("q"), limit: q.get("limit") ?? 25, offset: q.get("offset") ?? 0, contactHidden: !can(role, "leads.read_contact") }); } catch (e) { return e?.code === "invalid_data" ? err(400, "Unknown status") : dbErr(e); }
           return out({ total: r.total, leads: r.rows.map((l) => maskLead(l, role)) });
