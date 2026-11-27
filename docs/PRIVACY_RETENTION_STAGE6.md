@@ -21,7 +21,15 @@
 8. Avoid legal-compliance claims. This engineering baseline is not legal advice.
 
 ## Proposed retention decision for founder review (not enforced)
-A possible starting policy is to allow the business owner to choose a retention period for conversation records and leads, with a clearly explained default, and to offer a business-wide data export and deletion workflow. Exact periods, exceptions, backup expiry, and whether leads are retained separately from messages are undecided. **No automatic deletion currently occurs as a result of this document.**
+
+This is a draft decision framework, not a binding policy or a deployed feature:
+- **Customer conversation and lead records:** proposed default retention of 12 months from the last activity, with shorter/longer choices considered only after reviewing operational needs and legal obligations. This duration is a proposal and is not enforced.
+- **Deletion requests:** business owners should be able to initiate deletion of individual records and, eventually, business-wide records. Individual lead deletion currently exists, but business-wide deletion and a retention sweeper do not.
+- **Audit records:** avoid customer content; retain identifiers and event metadata only where justified. Audit records are not yet governed by a finalized retention schedule.
+- **Backups, platform logs and provider data:** separate retention boundaries must be disclosed; deletion from the live database cannot promise immediate deletion from backups or third parties.
+- **AI/email provider sharing:** no real provider is enabled by default; any live provider setup must include accurate disclosures and configuration review.
+
+The founder must approve or replace these proposed durations and disclosures before a customer-facing policy is published or automatic deletion is enabled. **No automatic deletion currently occurs.**
 
 ## Stage 6 acceptance criteria
 - [ ] Founder approves explicit retention periods and exceptions.
