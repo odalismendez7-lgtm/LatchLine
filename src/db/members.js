@@ -79,7 +79,7 @@ export function membersRepo(db, B) {
       return guard(async () => {
         const r = await db.batch([
           { sql: "UPDATE invitations SET revoked_at = ? WHERE id = ? AND business_id = ? AND accepted_at IS NULL AND revoked_at IS NULL", params: [now, id, B] },
-          audit(actorId, "invitation_revoked", id),
+          auditIfChanged(actorId, "invitation_revoked", id),
         ]);
         if (r[0].changes !== 1) throw new DbError("not_found", "no open invitation");
       });
