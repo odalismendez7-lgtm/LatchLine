@@ -89,6 +89,9 @@ describe("website widget onboarding", () => {
     const added = await A.send("POST", "/widget/origins", { origin: "https://www.example.com/" });
     assert.equal(added.status, 201);
     assert.deepEqual(added.data.origins, ["https://www.example.com"]);
+    const publicConfig = await w.app.fetch(new Request("https://latchline.example/api/widget/config?siteKey=" + encodeURIComponent(initial.data.siteKey), { headers: { Origin: "https://www.example.com" } }));
+    assert.equal(publicConfig.status, 200);
+    assert.equal(publicConfig.headers.get("Access-Control-Allow-Origin"), "https://www.example.com");
     const duplicate = await A.send("POST", "/widget/origins", { origin: "https://www.example.com" });
     assert.equal(duplicate.status, 200);
     assert.equal(duplicate.data.added, false);
@@ -96,6 +99,8 @@ describe("website widget onboarding", () => {
     assert.equal(removed.status, 200);
     assert.deepEqual(removed.data.origins, []);
     assert.equal((await A.send("DELETE", "/widget/origins", { origin: "https://www.example.com" })).status, 404);
+    const deniedConfig = await w.app.fetch(new Request("https://latchline.example/api/widget/config?siteKey=" + encodeURIComponent(initial.data.siteKey), { headers: { Origin: "https://www.example.com" } }));
+    assert.equal(deniedConfig.status, 404);
     const events = (await A.get("/audit")).data.events;
     assert.ok(events.some((e) => e.action === "website_origin_added" && e.detail.origin === "https://www.example.com"));
     assert.ok(events.some((e) => e.action === "website_origin_removed" && e.detail.origin === "https://www.example.com"));
