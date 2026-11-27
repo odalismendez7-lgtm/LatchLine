@@ -124,7 +124,7 @@ async function vOverview() {
     const [widget, facts, contacts] = await Promise.all([api("GET", B("/widget")), api("GET", B("/settings")), api("GET", B("/contacts"))]);
     if (widget.ok && facts.ok && contacts.ok) {
       const tasks = [
-        { label: "Register a website and install the chat widget", done: widget.data.origins.length > 0, view: "widget", action: "Website setup" },
+        { label: "Register a website origin", done: widget.data.origins.length > 0, view: "widget", action: "Website setup" },
         { label: "Confirm at least one business fact", done: Object.keys(facts.data.settings?.confirmedBy || {}).length > 0, view: "settings", action: "Business settings" },
       ];
       // Only owners can add or change notification contacts; don't present managers with an action they cannot take.
@@ -136,7 +136,7 @@ async function vOverview() {
         h("ul", { class: "plain" }, tasks.map((x) => h("li", null,
           h("span", null, (x.done ? "Complete — " : "Next — ") + x.label + " "),
           h("button", { class: "btn", onclick: () => { S.view = x.view; render(); } }, x.action)))),
-        h("p", { class: "muted" }, "Notification delivery is simulated in this build. No real email or text is sent."));
+        h("p", { class: "muted" }, "Website registration does not confirm that the widget is installed. Copy the code under Website setup and test it on your site. Notification delivery is simulated in this build; no real email or text is sent."));
     }
   }
   const card = (label, n, cls, go) => h("button", { class: "stat " + (cls || ""), onclick: go }, h("span", { class: "num" }, String(n ?? 0)), h("span", null, label));
