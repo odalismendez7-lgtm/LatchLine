@@ -48,7 +48,7 @@ for (const [name, viewport] of Object.entries(VIEWPORTS)) {
       assert.ok(w.s <= w.c + 1, `${label}: page scrolls horizontally (${w.s} > ${w.c})`);
     };
     const shot = async (n) => { if (SHOTS) { mkdirSync(SHOTS, { recursive: true }); await page.screenshot({ path: `${SHOTS}/${name}-${n}.png`, fullPage: false }); } };
-    const go = async (label) => { await page.getByRole("button", { name: label, exact: true }).click(); await page.waitForFunction(() => !document.querySelector("#main")?.textContent.startsWith("Loading")); };
+    const go = async (label) => { await page.getByRole("navigation", { name: "Sections" }).getByRole("button", { name: label, exact: true }).click(); await page.waitForFunction(() => !document.querySelector("#main")?.textContent.startsWith("Loading")); };
 
     before(async () => {
       ctx = await browser.newContext({ viewport });
