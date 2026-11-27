@@ -119,11 +119,28 @@ function tbl(cols, rows) {
 
 async function vOverview() {
   const r = await api("GET", B("/overview")); const o = r.data.overview || {};
-  const setup = can("settings.read") ? await api("GET", B("/widget")) : null;
-  const needsSetup = setup?.ok && !setup.data.origins?.length;
+  let onboarding = null;
+  if (can("settings.read")) {
+    const [widget, facts, contacts] = await Promise.all([api("GET", B("/widget")), api("GET", B("/settings")), api("GET", B("/contacts"))]);
+    if (widget.ok && facts.ok && contacts.ok) {
+      const tasks = [
+        { label: "Register a website and install the chat widget", done: widget.data.origins.length > 0, view: "widget", action: "Website setup" },
+        { label: "Confirm at least one business fact", done: Object.keys(facts.data.settings?.confirmedBy || {}).length > 0, view: "settings", action: "Business settings" },
+        { label: "Add a notification contact", done: contacts.data.contacts.length > 0, view: "contacts", action: "Notification contacts" },
+      ];
+      const complete = tasks.filter((x) => x.done).length;
+      onboarding = h("div", { class: "onboarding" },
+        h("h3", null, "Getting started"),
+        h("p", { class: "muted" }, complete + " of " + tasks.length + " setup tasks completed"),
+        h("ul", { class: "plain" }, tasks.map((x) => h("li", null,
+          h("span", null, (x.done ? "Complete — " : "Next — ") + x.label + " "),
+          h("button", { class: "btn", onclick: () => { S.view = x.view; render(); } }, x.action)))),
+        h("p", { class: "muted" }, "Notification delivery is simulated in this build. No real email or text is sent."));
+    }
+  }
   const card = (label, n, cls, go) => h("button", { class: "stat " + (cls || ""), onclick: go }, h("span", { class: "num" }, String(n ?? 0)), h("span", null, label));
   return h("section", null, h("h2", null, "Overview"),
-    needsSetup ? h("p", { class: "alert" }, "Your website chat is not connected yet. Register your website and install the widget to start receiving inquiries. ", h("button", { class: "btn", onclick: () => { S.view = "widget"; render(); } }, "Set up website chat")) : null,
+    onboarding,
     h("div", { class: "stats" }, card("New leads", o.leadsNew, "", () => { S.view = "leads"; S.filter = { status: "new" }; render(); }), card("Urgent, not yet handled", o.urgentOpen, o.urgentOpen ? "urgent" : "", () => { S.view = "leads"; S.filter = { urgent: "1" }; render(); }), card("Emergencies with no contact details", o.incompleteEmergency, o.incompleteEmergency ? "urgent" : "", () => { S.view = "leads"; S.filter = { urgent: "1", incomplete: "1" }; render(); }), card("Waiting for a human", o.handoffsOpen, "", () => { S.view = "handoffs"; render(); }), card("All leads", o.leadsTotal, "", () => { S.view = "leads"; S.filter = {}; render(); }), card("Conversations", o.conversationsTotal, "", () => { S.view = "conversations"; render(); })),
     r.data.notificationsNeedingAttention ? h("p", { class: "alert" }, r.data.notificationsNeedingAttention + " notification(s) need attention — the business may NOT have been told about them. ", h("a", { href: "#", onclick: (e) => { e.preventDefault(); S.view = "notifications"; render(); } }, "Review")) : null,
     h("p", { class: "muted" }, "Notifications in this build are SIMULATED (mock provider). No real email or text is sent."));
