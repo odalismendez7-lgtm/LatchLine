@@ -51,7 +51,7 @@ const TEXT = {
   aiDown: "I can't look that up right now.",
 };
 
-const ORDER = ["issue", "name", "phone", "zip", "address", "urgency"]; // address is optional and may be skipped
+const ORDER = ["issue", "name", "phone", "zip", "urgency"]; // street address is captured only when explicitly offered, never blocks lead completion
 // In an emergency the way to reach the customer comes first (their name is the last thing that matters).
 const EMERGENCY_ORDER = ["issue", "phone", "zip", "name", "urgency"]; // emergencies never wait on an optional street address
 const orderFor = (state) => (state.emergency ? EMERGENCY_ORDER : ORDER);
