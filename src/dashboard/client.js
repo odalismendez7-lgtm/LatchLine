@@ -199,7 +199,7 @@ async function vWidget() {
     w ? h("button", { class: "btn primary", type: "submit" }, "Add website") : null);
   const origins = s.origins.length ? h("ul", { class: "plain" }, s.origins.map((origin) => h("li", null, h("code", null, origin), w ? h("button", { class: "btn danger", onclick: async () => {
     if (!window.confirm("Remove " + origin + "? The widget will stop working on that website.")) return;
-    const x = await api("DELETE", B("/widget/origins"), { origin });
+    const x = await api("DELETE", B("/widget/origins?origin=" + encodeURIComponent(origin)));
     if (x.ok) { toast("Website origin removed."); render(); } else toast(say(x), true);
   } }, "Remove") : null))) : h("p", { class: "muted" }, "No website origins are registered. The widget will not load until you add one.");
   return h("section", null,
