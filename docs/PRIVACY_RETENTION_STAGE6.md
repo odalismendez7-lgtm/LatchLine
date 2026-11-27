@@ -31,6 +31,17 @@ This is a draft decision framework, not a binding policy or a deployed feature:
 
 The founder must approve or replace these proposed durations and disclosures before a customer-facing policy is published or automatic deletion is enabled. **No automatic deletion currently occurs.**
 
+## Deletion dependency map (schema review)
+
+The current SQLite/D1 migrations define these database-level cascades:
+- Deleting a business cascades to its registered origins, knowledge base, conversations, leads, contacts, notifications, memberships, and invitations.
+- Deleting a conversation cascades to its messages and linked lead; deleting that lead cascades to lead events and notifications; deleting a notification cascades to notification-attempt rows.
+- Deleting a user cascades to that user's sessions, authentication tokens, memberships, and invitations they created.
+- Audit rows intentionally have no foreign key to businesses and have database triggers preventing update or deletion. They therefore survive business deletion; the current schema can retain the business identifier and actor identifier in those rows.
+- Rate-limit rows use hashed keys and time windows, without a business foreign key.
+
+These are schema-level effects, not proof that an end-user deletion workflow exists. A production deletion design must decide whether a user account shared across multiple businesses can be deleted, how to handle ownership transfer, how long audit identifiers remain, and how backup/log/provider copies expire. The existing lead-deletion operation records a minimal audit event and deletes its conversation; this does not provide a full business or account deletion workflow.
+
 ## Stage 6 acceptance criteria
 - [ ] Founder approves explicit retention periods and exceptions.
 - [ ] A customer-facing privacy notice accurately describes collection, use, sharing, retention, deletion, and limitations.
