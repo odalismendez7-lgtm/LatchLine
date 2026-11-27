@@ -136,7 +136,9 @@ export function createDashboardApi({ db, auth, mailer, now = Date.now, devMode =
         "GET contacts": ["contacts.read"], "POST contacts": ["contacts.write"], "DELETE contacts/:id": ["contacts.write"], "PATCH contacts/:id": ["contacts.write"],
         "POST contacts/:id/send-code": ["contacts.write"], "POST contacts/:id/confirm": ["contacts.write"],
         "GET team": ["team.read"], "POST team/invitations": ["team.write"], "DELETE team/invitations/:id": ["team.write"], "PATCH team/members/:id": ["team.write"], "DELETE team/members/:id": ["team.write"],
-        "GET audit": ["audit.read"],\n        "GET privacy/export": ["privacy.export"],\n        "POST privacy/retention-run": ["privacy.retention"],
+        "GET audit": ["audit.read"],
+        "GET privacy/export": ["privacy.export"],
+        "POST privacy/retention-run": ["privacy.retention"],
       };
       const key = (() => {
         const segs = parts;
@@ -164,7 +166,9 @@ export function createDashboardApi({ db, auth, mailer, now = Date.now, devMode =
       const id = parts[0] === "team" ? parts[2] : parts[1];
 
       switch (key) {
-        case "GET privacy/export": { const bundle = await T.dashboard.exportPrivacyBundle(); await T.dashboard.recordExport(actor, bundle.leads.length); return out({ exportedAt: new Date(now()).toISOString(), data: bundle }); }\n        case "POST privacy/retention-run": { const cutoff = new Date(now() - 365 * 24 * 60 * 60 * 1000).toISOString(); const result = await T.dashboard.expireCustomerData(actor, cutoff, 100); return out({ ok: true, cutoff, ...result }); }\n        case "GET overview": return out({ role, overview: await T.dashboard.overview(), notificationsNeedingAttention: can(role, "notifications.read") ? (await T.notifications.needsAttention({ now: new Date(now()).toISOString() })).length : undefined });
+        case "GET privacy/export": { const bundle = await T.dashboard.exportPrivacyBundle(); await T.dashboard.recordExport(actor, bundle.leads.length); return out({ exportedAt: new Date(now()).toISOString(), data: bundle }); }
+        case "POST privacy/retention-run": { const cutoff = new Date(now() - 365 * 24 * 60 * 60 * 1000).toISOString(); const result = await T.dashboard.expireCustomerData(actor, cutoff, 100); return out({ ok: true, cutoff, ...result }); }
+        case "GET overview": return out({ role, overview: await T.dashboard.overview(), notificationsNeedingAttention: can(role, "notifications.read") ? (await T.notifications.needsAttention({ now: new Date(now()).toISOString() })).length : undefined });
         case "GET widget": {
           const settings = await platform.widgetSettingsForBusiness(bizId);
           return settings ? out({ siteKey: settings.siteKey, origins: settings.origins }) : err(404, "Not found");
