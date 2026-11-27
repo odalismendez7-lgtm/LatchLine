@@ -36,6 +36,27 @@ export function platformRepo(db) {
         return { id };
       });
     },
+    async widgetSettingsForBusiness(businessId) {
+      if (typeof businessId !== "string" || businessId.length < 2 || businessId.length > 80) return null;
+      return guard(async () => {
+        const b = await db.first("SELECT site_key, status FROM businesses WHERE id = ?", [businessId]);
+        if (!b) return null;
+        const rows = await db.all("SELECT origin FROM business_origins WHERE business_id = ? ORDER BY origin", [businessId]);
+        return { siteKey: b.site_key, status: b.status, origins: rows.map((r) => r.origin) };
+      });
+    },
+    async addBusinessOrigin(businessId, origin) {
+      return guard(async () => {
+        const r = await db.run("INSERT OR IGNORE INTO business_origins (business_id, origin) SELECT ?, ? WHERE EXISTS (SELECT 1 FROM businesses WHERE id = ? AND status = 'active')", [businessId, origin, businessId]);
+        return { added: r.changes === 1 };
+      });
+    },
+    async removeBusinessOrigin(businessId, origin) {
+      return guard(async () => {
+        const r = await db.run("DELETE FROM business_origins WHERE business_id = ? AND origin = ?", [businessId, origin]);
+        return { removed: r.changes === 1 };
+      });
+    },
     async isKnownOrigin(origin) {
       if (typeof origin !== "string" || origin.length > 200) return false;
       return guard(async () => !!(await db.first(
