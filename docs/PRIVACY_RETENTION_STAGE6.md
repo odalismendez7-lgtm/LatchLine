@@ -14,7 +14,7 @@
 1. Collect only fields needed for the customer inquiry and service follow-up; address capture remains optional.
 2. Never put customer message text, contact values, street addresses, credentials, raw session tokens, or reset/invite tokens in routine logs or audit details.
 3. Use tenant-scoped repositories and authorization for any export, delete, retention sweep, or customer-data access.
-4. Deletion must be transactional where possible, account for foreign keys and dependent rows, and leave only minimal non-identifying audit evidence where legally and operationally justified. Do not claim deletion if dependent records remain.
+4. Deletion must be transactional where possible, account for foreign keys and dependent rows, and leave only minimal audit evidence where legally and operationally justified; retained identifiers are pseudonymous/linkable, not anonymous. Do not claim deletion if dependent records remain.
 5. Deletion and retention controls must be tested with multi-tenant fixtures, retry/failure cases, and database read-back checks before release.
 6. Backups, provider retention, logs, and third-party AI/email processing require separately documented retention and deletion limitations. Deletion from the live database must not be represented as immediate deletion from backups or providers.
 7. Do not send data to real AI or email providers until the business-facing disclosure, provider configuration, and appropriate consent/approval gates are reviewed.
@@ -37,7 +37,7 @@ The current SQLite/D1 migrations define these database-level cascades:
 - Deleting a business cascades to its registered origins, knowledge base, conversations, leads, contacts, notifications, memberships, and invitations.
 - Deleting a conversation cascades to its messages and linked lead; deleting that lead cascades to lead events and notifications; deleting a notification cascades to notification-attempt rows.
 - Deleting a user cascades to that user's sessions, authentication tokens, memberships, and invitations they created.
-- Audit rows intentionally have no foreign key to businesses and have database triggers preventing update or deletion. They therefore survive business deletion; the current schema can retain the business identifier and actor identifier in those rows.
+- Audit rows intentionally have no foreign key to businesses and have database triggers preventing update or deletion. They therefore survive business deletion; the current schema can retain business, actor, target, and related record identifiers in those rows. These identifiers are not customer message content, but they are still linkable metadata and must not be described as anonymous.
 - Rate-limit rows use hashed keys and time windows, without a business foreign key.
 
 These are schema-level effects, not proof that an end-user deletion workflow exists. A production deletion design must decide whether a user account shared across multiple businesses can be deleted, how to handle ownership transfer, how long audit identifiers remain, and how backup/log/provider copies expire. The existing lead-deletion operation records a minimal audit event and deletes its conversation; this does not provide a full business or account deletion workflow.
