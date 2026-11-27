@@ -121,6 +121,40 @@ describe("happy path lead capture", () => {
     assert.equal(lead.state, "NY");
     assert.equal(lead.zip, "10467");
   });
+  test("customer can skip the optional street address and still save the lead", async () => {
+    const { deps, A } = await setup();
+    let r = await handleMessage(deps("acme-plumbing"), { message: "my kitchen faucet keeps dripping all day" });
+    const id = r.conversationId;
+    r = await handleMessage(deps("acme-plumbing"), { message: "Jane Doe", conversationId: id });
+    r = await handleMessage(deps("acme-plumbing"), { message: "512-555-0142", conversationId: id });
+    r = await handleMessage(deps("acme-plumbing"), { message: "62701", conversationId: id });
+    assert.match(r.reply, /street address/i);
+    r = await handleMessage(deps("acme-plumbing"), { message: "skip", conversationId: id });
+    assert.match(r.reply, /happening right now|can it wait/i);
+    r = await handleMessage(deps("acme-plumbing"), { message: "it can wait", conversationId: id });
+    assert.equal(r.leadStatus, "saved");
+    const lead = (await A.leads.list())[0];
+    assert.equal(lead.address_line1, null);
+    assert.equal(lead.zip, "62701");
+  });
+  test("accepts a bare street address only while the address field is being requested", async () => {
+    const { deps, A } = await setup();
+    let r = await handleMessage(deps("acme-plumbing"), { message: "my kitchen faucet keeps dripping all day" });
+    const id = r.conversationId;
+    r = await handleMessage(deps("acme-plumbing"), { message: "Jane Doe", conversationId: id });
+    r = await handleMessage(deps("acme-plumbing"), { message: "512-555-0142", conversationId: id });
+    r = await handleMessage(deps("acme-plumbing"), { message: "62701", conversationId: id });
+    assert.match(r.reply, /street address/i);
+    r = await handleMessage(deps("acme-plumbing"), { message: "123 Main Street, Springfield, IL 62701", conversationId: id });
+    assert.match(r.reply, /happening right now|can it wait/i);
+    r = await handleMessage(deps("acme-plumbing"), { message: "it can wait", conversationId: id });
+    assert.equal(r.leadStatus, "saved");
+    const lead = (await A.leads.list())[0];
+    assert.equal(lead.address_line1, "123 Main Street");
+    assert.equal(lead.city, "Springfield");
+    assert.equal(lead.state, "IL");
+    assert.equal(lead.zip, "62701");
+  });
   test("ZIP outside the verified list is stored as unconfirmed, not refused", async () => {
     const { deps, A } = await setup();
     const { r } = await fullLead(deps("acme-plumbing"), { zip: "90210" });
