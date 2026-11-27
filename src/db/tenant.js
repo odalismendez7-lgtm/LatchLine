@@ -312,5 +312,45 @@ export function forBusiness(db, businessId) {
     return r ?? null;
   });
 
-  return Object.freeze({ businessId: B, profile, conversations: Object.freeze(conversations), leads: Object.freeze(leads), knowledge: Object.freeze(knowledge), notifications: notificationsRepo(db, B, leads), members: membersRepo(db, B), contactVerify: contactVerifyRepo(db, B), dashboard: dashboardRepo(db, B) });
+  // Entitlements and usage are always resolved through this tenant-bound handle.
+  const entitlements = Object.freeze({
+    async resolve(featureKey) {
+      if (typeof featureKey !== "string" || !/^[a-z][a-z0-9_.-]{0,99}$/.test(featureKey)) return { allowed: false, value: null, source: "invalid" };
+      return guard(async () => {
+        const row = await db.first(
+          "SELECT s.status, pe.value_json FROM business_subscriptions s LEFT JOIN plan_entitlements pe ON pe.plan_id = s.plan_id AND pe.feature_key = ? JOIN plans p ON p.id = s.plan_id AND p.active = 1 WHERE s.business_id = ?",
+          [featureKey, B]);
+        const override = await db.first("SELECT value_json FROM business_entitlement_overrides WHERE business_id = ? AND feature_key = ?", [B, featureKey]);
+        if (override) {
+          const value = parse(override.value_json, null);
+          return { allowed: value === true || (value && typeof value === "object" && value.enabled === true), value, source: "business_override" };
+        }
+        if (!row || !["trial", "active"].includes(row.status) || row.value_json == null) return { allowed: false, value: null, source: "default_deny" };
+        const value = parse(row.value_json, null);
+        return { allowed: value === true || (value && typeof value === "object" && value.enabled === true), value, source: "plan" };
+      });
+    },
+    async recordUsage(metricKey, periodStart, amount = 1) {
+      if (typeof metricKey !== "string" || !/^[a-z][a-z0-9_.-]{0,99}$/.test(metricKey)) throw new DbError("invalid_data", "invalid usage metric");
+      if (typeof periodStart !== "string" || !/^\\d{4}-\\d{2}-\\d{2}$/.test(periodStart) || !Number.isFinite(Date.parse(periodStart + "T00:00:00.000Z"))) throw new DbError("invalid_data", "invalid usage period");
+      if (!Number.isSafeInteger(amount) || amount < 1 || amount > 1000000) throw new DbError("invalid_data", "invalid usage amount");
+      return guard(async () => {
+        const t = nowIso();
+        await db.run("INSERT INTO usage_counters (business_id, metric_key, period_start, count, updated_at) VALUES (?,?,?,?,?) ON CONFLICT(business_id,metric_key,period_start) DO UPDATE SET count = usage_counters.count + excluded.count, updated_at = excluded.updated_at", [B, metricKey, periodStart, amount, t]);
+        const row = await db.first("SELECT count FROM usage_counters WHERE business_id = ? AND metric_key = ? AND period_start = ?", [B, metricKey, periodStart]);
+        if (!row) throw new DbError("not_persisted", "usage counter was not persisted");
+        return { metricKey, periodStart, count: row.count };
+      });
+    },
+    async usage(metricKey, periodStart) {
+      if (typeof metricKey !== "string" || !/^[a-z][a-z0-9_.-]{0,99}$/.test(metricKey)) throw new DbError("invalid_data", "invalid usage metric");
+      if (typeof periodStart !== "string" || !/^\\d{4}-\\d{2}-\\d{2}$/.test(periodStart)) throw new DbError("invalid_data", "invalid usage period");
+      return guard(async () => {
+        const row = await db.first("SELECT count FROM usage_counters WHERE business_id = ? AND metric_key = ? AND period_start = ?", [B, metricKey, periodStart]);
+        return row?.count ?? 0;
+      });
+    },
+  });
+
+  return Object.freeze({ businessId: B, profile, conversations: Object.freeze(conversations), leads: Object.freeze(leads), knowledge: Object.freeze(knowledge), entitlements, notifications: notificationsRepo(db, B, leads), members: membersRepo(db, B), contactVerify: contactVerifyRepo(db, B), dashboard: dashboardRepo(db, B) });
 }
