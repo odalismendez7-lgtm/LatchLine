@@ -471,14 +471,17 @@ export async function handleMessage(deps, input) {
       else { retried = retried ?? "zip"; attempt = attempt || !sideTurn; }
     }
     if (aw === "address" && !state.slots.addressLine1 && !foundAddress.addressLine1) {
+      const addressShouldYield = asksForHuman || offerAnswered || Object.keys(found).length > 0
+        || sig.frustration > 0 || sig.thanks || sig.abandon || DONE_INTENT.test(message);
       if (optionalGiveUp && !sideTurn) settle("address");
+      else if (addressShouldYield) { state.settled.address = "skipped"; consumed = true; retried = null; attempt = false; }
       else { retried = retried ?? "address"; attempt = attempt || !sideTurn; }
     }
     if (!state.slots.urgency) {
       if (state.emergency) state.slots.urgency = "now";
       else {
         const u = extractUrgency(message);
-        if (u && !(aw && aw !== "urgency" && sideTurn)) {
+        if (u && (aw === "address" || !(aw && aw !== "urgency" && sideTurn))) {
           state.slots.urgency = u; consumed = true; delete state.settled.urgency;
           if (aw === "address" && !state.slots.addressLine1) { state.settled.address = "skipped"; retried = null; attempt = false; }
         }
