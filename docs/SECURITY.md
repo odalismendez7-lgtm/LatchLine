@@ -1,6 +1,6 @@
 # Security Requirements
 
-Last updated: 2026-11-19 (Stage 6) · Status: REQUIREMENTS, partly implemented (see the table below). Not security-reviewed by anyone independent.
+Last updated: 2026-11-27 (Step 5 auth and tenant hardening) · Status: REQUIREMENTS, partly implemented (see the table below). Not security-reviewed by anyone independent.
 
 This repository may be **public**. Never commit secrets, customer data, real business data, or database exports.
 
@@ -20,6 +20,14 @@ This repository may be **public**. Never commit secrets, customer data, real bus
 | Backup and recovery | Documented backup schedule, restore procedure, and a tested restore | Restore drill recorded in `TEST_CASES.md` |
 | Customer privacy | Collect only needed fields; never request passwords or payment cards in chat; data retention/deletion policy defined | Policy + tests |
 | AI-specific | Customer text treated as untrusted data; model cannot access other tenants' data; model output cannot trigger privileged actions; response guard blocks invented facts/claims | Prompt-injection and leakage tests |
+
+## Step 5 authentication and tenant hardening
+
+- Production password hashing is fixed at PBKDF2-SHA256 with 600,000 iterations; weaker settings are refused unless tests explicitly opt into the unsafe fast hash.
+- Session tokens and one-time verification/reset/invitation tokens are stored as hashes. Session cookies are HttpOnly and SameSite=Strict; HTTPS uses the `__Host-` prefix and Secure. Mutating dashboard requests require same-origin Origin and a per-session CSRF token.
+- Invitation acceptance now creates membership only when the invitation's business-scoped, unexpired, unrevoked, unused state transition succeeds. The audit event is conditional on that transition.
+- Owner demotion/removal enforces the remaining-owner count inside the same atomic database batch as the mutation, preventing concurrent requests from removing the final owner. Failed role/invitation mutations are not recorded as successful audit events.
+- Automated race and repository tests pass. Remaining gates: real account email delivery is still mocked, PBKDF2 cost has not been measured in Workers, D1 has not been tested, and no independent security review has occurred.
 
 ## Implemented in Stage 3 (and what is still missing)
 
