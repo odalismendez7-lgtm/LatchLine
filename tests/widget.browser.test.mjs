@@ -545,6 +545,7 @@ describe("Stage 7B review findings (each failed before its fix)", { skip }, () =
     let releaseResponse;
     const responseGate = new Promise((resolve) => { releaseResponse = resolve; });
     await page.route("**/api/chat", async (r) => { await responseGate; r.continue(); });
+    await page.waitForFunction(() => { const r = document.querySelector("#latchline-widget-root")?.shadowRoot; return r && r.activeElement === r.querySelector("textarea"); });
     await say(page, "hello there"); await page.locator(".typing.on").waitFor();
     const focusedNewChat = await inShadow(page, (r) => { const button = r.querySelector("header button"); button.focus(); return r.activeElement === button; });
     releaseResponse(); // keep the reply pending until after the keyboard user has moved focus
