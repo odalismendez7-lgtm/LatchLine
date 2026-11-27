@@ -108,11 +108,12 @@ export function createApp({ db, router = null, store, salt, clientLimit = { limi
   };
 
   async function runScheduled() {
-    const out = { reconciled: 0, retentionDeleted: 0, errors: [], dispatch: null };\n    const retentionCutoff = new Date(now()); retentionCutoff.setFullYear(retentionCutoff.getFullYear() - 1);
+    const out = { reconciled: 0, retentionDeleted: 0, retentionHasMore: 0, errors: [], dispatch: null };
+    const retentionCutoff = new Date(now() - 365 * 24 * 60 * 60 * 1000).toISOString();
     try {
       for (const id of await platform.activeBusinessIds()) {
-        try { out.reconciled += (await forBusiness(db, id).notifications.reconcileMissing({ now: new Date(now()).toISOString() })).enqueued; }
-        catch { if (!out.errors.includes("reconcile_failed")) out.errors.push("reconcile_failed"); }
+        try { const T = forBusiness(db, id); out.reconciled += (await T.notifications.reconcileMissing({ now: new Date(now()).toISOString() })).enqueued; const swept = await T.dashboard.expireCustomerData("system_retention", retentionCutoff, 100); out.retentionDeleted += swept.deleted; if (swept.hasMore) out.retentionHasMore++; }
+        catch { if (!out.errors.includes("scheduled_tenant_failed")) out.errors.push("scheduled_tenant_failed"); }
       }
     } catch { out.errors.push("database_unavailable"); }
     out.dispatch = channels ? await dispatchDue({ db, channels, now: () => new Date(now()).toISOString() }) : null;
