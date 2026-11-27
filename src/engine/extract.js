@@ -24,6 +24,7 @@ export function spokenDigitsToDigits(text) {
 // when the conversation is explicitly waiting for that field. Never guess a location.
 export function extractServiceAddress(rawText, { allowBare = false } = {}) {
   const raw = String(rawText ?? "").normalize("NFC").trim();
+  if (/[\r\n]/.test(raw)) return {};
   const match = /(?:service |property )?address(?: is|:)\s*(.+)$/i.exec(raw)
     ?? (allowBare && /^(?:\d{1,6}\s|P\.?O\.?\s+Box\s+)/i.test(raw) ? [raw, raw] : null);
   if (!match) return {};
