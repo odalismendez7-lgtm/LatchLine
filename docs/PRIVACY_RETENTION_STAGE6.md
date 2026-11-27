@@ -1,6 +1,6 @@
 # Privacy, Retention, and Deletion — Stage 6 Baseline
 
-**Status: proposal and engineering baseline only. Not an implemented policy or customer-facing legal notice.** No public service is deployed. The founder must approve retention periods and disclosures before production.
+**Status: founder-approved retention design; implementation and legal review still pending.** The founder approved the proposed 12-month retention period on 2026-11-27. This document is an engineering policy record, not legal advice or a claim of compliance.
 
 ## Data inventory (confirmed from current implementation review)
 - Conversation messages and conversation state.
@@ -20,16 +20,16 @@
 7. Do not send data to real AI or email providers until the business-facing disclosure, provider configuration, and appropriate consent/approval gates are reviewed.
 8. Avoid legal-compliance claims. This engineering baseline is not legal advice.
 
-## Proposed retention decision for founder review (not enforced)
+## Founder-approved retention policy (approved 2026-11-27; enforcement pending)
 
-This is a draft decision framework, not a binding policy or a deployed feature:
-- **Customer conversation and lead records:** proposed default retention of 12 months from the last activity, with shorter/longer choices considered only after reviewing operational needs and legal obligations. This duration is a proposal and is not enforced.
-- **Deletion requests:** business owners should be able to initiate deletion of individual records and, eventually, business-wide records. Individual lead deletion currently exists, but business-wide deletion and a retention sweeper do not.
-- **Audit records:** avoid customer content; retain identifiers and event metadata only where justified. Audit records are not yet governed by a finalized retention schedule.
+- **Customer lead and conversation records:** retain for no longer than 12 months after the customer's last activity, then delete from the active application database.
+- **Activity timestamp:** enforcement must use the most recent customer activity timestamp (not a staff edit, status change, automated notification or assistant-only message) and must be carefully validated before implementation. If the database cannot reliably distinguish customer activity, enforcement must fail closed rather than delete based on an unreliable timestamp.
+- **Deletion requests:** individual lead deletion is implemented. Business-wide deletion and complete export workflows remain incomplete.
+- **Audit records:** the existing immutable audit system's retention is separate and unresolved; it may retain linkable business/record identifiers and must not be represented as fully deleted or anonymous.
 - **Backups, platform logs and provider data:** separate retention boundaries must be disclosed; deletion from the live database cannot promise immediate deletion from backups or third parties.
-- **AI/email provider sharing:** no real provider is enabled by default; any live provider setup must include accurate disclosures and configuration review.
+- **AI/email provider sharing:** no real provider is enabled by default; live provider setup requires accurate disclosure and configuration review.
 
-The founder must approve or replace these proposed durations and disclosures before a customer-facing policy is published or automatic deletion is enabled. **No automatic deletion currently occurs.**
+The founder approved this retention period. Automatic enforcement is **not yet enabled**; a safe, tested sweeper, explicit timestamp definition, and verification are still required.
 
 ## Deletion dependency map (schema review)
 
@@ -43,7 +43,7 @@ The current SQLite/D1 migrations define these database-level cascades:
 These are schema-level effects, not proof that an end-user deletion workflow exists. A production deletion design must decide whether a user account shared across multiple businesses can be deleted, how to handle ownership transfer, how long audit identifiers remain, and how backup/log/provider copies expire. The existing lead-deletion operation records a minimal audit event and deletes its conversation; this does not provide a full business or account deletion workflow.
 
 ## Stage 6 acceptance criteria
-- [ ] Founder approves explicit retention periods and exceptions.
+- [x] Founder approves explicit retention period (12 months after customer activity, approval 2026-11-27); exceptions and enforcement details still need review.
 - [ ] A customer-facing privacy notice accurately describes collection, use, sharing, retention, deletion, and limitations.
 - [ ] Business-owner deletion/export endpoints and UI exist and are authorization-tested.
 - [ ] Deletion covers conversations, messages, leads, lead events, notifications, related records, and business-specific data as appropriate; dependencies are mapped before implementation.
@@ -82,12 +82,12 @@ This wording deliberately does **not** promise that data is never shared, that A
 - [ ] Inspect logs, exception traces, analytics, debug mailbox and audit detail for PII leakage using seeded test values and automated assertions.
 - [ ] Confirm that sensitive volunteered text is not echoed into summaries, notifications, audit details or AI payloads unnecessarily; document cases where redaction cannot be reliably detected.
 - [ ] Give customers and business owners an accurate notice and a usable deletion-request path. The notice must describe limits for backups and third-party copies.
-- [ ] Obtain founder approval for a retention schedule and legal review where appropriate; only then implement and test retention enforcement. The proposed 12-month period is still not approved.
+- [x] Obtain founder approval for the 12-month retention schedule (2026-11-27).\n- [ ] Implement and test retention enforcement; review the customer-facing notice and seek qualified legal review before launch.
 
 ## Known current limitations
 
 - The customer widget has not yet been proven to present the above privacy notice or enforce all collection boundaries.
 - Free-text redaction and viewer-role masking are heuristic protections, not a complete sensitive-data detection system; privileged owner/staff views may still expose stored customer details.
 - Real provider payloads, their retention behavior, and deletion propagation have not been independently verified. Current provider integrations remain mock/default or unconfigured.
-- Business/account-wide deletion, data export/deletion request workflows, and automatic retention enforcement are not implemented.
+- Business/account-wide deletion, full data export/deletion request workflows, and automatic retention enforcement are not implemented.
 - The append-only audit design preserves identifiers and details across deletion; audit retention is unresolved.
