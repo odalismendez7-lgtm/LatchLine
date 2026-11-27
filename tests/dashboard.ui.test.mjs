@@ -96,7 +96,7 @@ for (const [name, viewport] of Object.entries(VIEWPORTS)) {
       assert.match(overview, /Urgent, not yet handled/);
       assert.match(overview, /SIMULATED/);
       assert.match(overview, /Getting started/);
-      assert.match(overview, /Register a website and install the chat widget/);
+      assert.match(overview, /Register a website origin/);
       assert.match(overview, /Confirm at least one business fact/);
       assert.match(overview, /Add a notification contact/);
       await noHScroll("overview"); await shot("2-overview");
