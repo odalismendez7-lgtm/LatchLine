@@ -22,7 +22,7 @@ const lead = (o = {}) => ({ name: "Jane Doe", phone: "+15125550142", email: "jan
 describe("migrations", () => {
   test("apply once and are idempotent", () => {
     const db = new SqliteAdapter(":memory:");
-    assert.deepEqual(migrate(db), ["0001_init.sql", "0002_notifications.sql", "0003_accounts.sql", "0004_simulated_mail.sql", "0005_notification_variant.sql", "0006_chat_request_dedup.sql", "0007_chat_request_payload_hash.sql", "0008_structured_service_address.sql"]);
+    assert.deepEqual(migrate(db), ["0001_init.sql", "0002_notifications.sql", "0003_accounts.sql", "0004_simulated_mail.sql", "0005_notification_variant.sql", "0006_chat_request_dedup.sql", "0007_chat_request_payload_hash.sql", "0008_structured_service_address.sql", "0009_stage7_entitlements.sql"]);
     assert.deepEqual(migrate(db), []);
   });
 });
