@@ -648,3 +648,15 @@ describe("Stage 6 deletion behavior", () => {
     await assert.rejects(() => T.dashboard.deleteLead(u.userId, leadId), (e) => e.code === "not_found");
   });
 });
+
+
+test("lead deletion is tenant-scoped and cannot erase another business's lead", async () => {
+  const w = await makeWorld();
+  const a = await w.signup("tenant-delete-a@acme.example", "Business A");
+  const b = await w.signup("tenant-delete-b@acme.example", "Business B");
+  const { leadId } = await w.seedLead(b.bizId);
+  const TA = forBusiness(w.db, a.bizId);
+  await assert.rejects(() => TA.dashboard.deleteLead("actor-a", leadId), (e) => e.code === "not_found");
+  const row = await w.db.first("SELECT id FROM leads WHERE id = ? AND business_id = ?", [leadId, b.bizId]);
+  assert.ok(row, "lead belonging to business B must remain intact");
+});
