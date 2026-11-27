@@ -214,6 +214,38 @@ describe("every tenant statement is scoped (SQL spy)", () => {
   });
 });
 
+describe("tenant entitlements and usage", () => {
+  test("unknown features default deny and plan values resolve only for the assigned tenant", async () => {
+    const db = fresh(); const { A, B } = await seed(db);
+    assert.deepEqual(await A.entitlements.resolve("chat.enabled"), { allowed: false, value: null, source: "default_deny" });
+    await db.run("INSERT INTO plans (id,name,created_at) VALUES ('basic','Basic','2026-01-01')");
+    await db.run("INSERT INTO plan_entitlements (plan_id,feature_key,value_json) VALUES ('basic','chat.enabled','true')");
+    await db.run("INSERT INTO business_subscriptions (business_id,plan_id,status,updated_at) VALUES ('acme-plumbing','basic','active','2026-01-01')");
+    assert.deepEqual(await A.entitlements.resolve("chat.enabled"), { allowed: true, value: true, source: "plan" });
+    assert.deepEqual(await B.entitlements.resolve("chat.enabled"), { allowed: false, value: null, source: "default_deny" });
+    assert.equal((await A.entitlements.resolve("unknown.feature")).allowed, false);
+  });
+  test("business override takes precedence and cancelled subscriptions do not grant plan access", async () => {
+    const db = fresh(); const { A } = await seed(db);
+    await db.run("INSERT INTO plans (id,name,created_at) VALUES ('basic','Basic','2026-01-01')");
+    await db.run("INSERT INTO plan_entitlements (plan_id,feature_key,value_json) VALUES ('basic','reports.export','true')");
+    await db.run("INSERT INTO business_subscriptions (business_id,plan_id,status,updated_at) VALUES ('acme-plumbing','basic','cancelled','2026-01-01')");
+    assert.equal((await A.entitlements.resolve("reports.export")).allowed, false);
+    await db.run("INSERT INTO business_entitlement_overrides (business_id,feature_key,value_json,updated_at) VALUES ('acme-plumbing','reports.export','true','2026-01-02')");
+    assert.equal((await A.entitlements.resolve("reports.export")).allowed, true);
+  });
+  test("usage increments atomically by tenant and period; invalid input is rejected", async () => {
+    const { A, B } = await seed(fresh());
+    const results = await Promise.all(Array.from({ length: 10 }, () => A.entitlements.recordUsage("messages", "2026-11-01")));
+    assert.equal(results.at(-1).count, 10);
+    assert.equal(await A.entitlements.usage("messages", "2026-11-01"), 10);
+    assert.equal(await B.entitlements.usage("messages", "2026-11-01"), 0);
+    assert.equal(await A.entitlements.usage("messages", "2026-12-01"), 0);
+    await assert.rejects(A.entitlements.recordUsage("../messages", "2026-11-01"), (e) => e.code === "invalid_data");
+    await assert.rejects(A.entitlements.recordUsage("messages", "not-a-date"), (e) => e.code === "invalid_data");
+  });
+});
+
 describe("audit log", () => {
   test("records events without customer values and cannot be edited or deleted", async () => {
     const db = fresh();
