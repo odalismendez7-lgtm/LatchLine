@@ -97,6 +97,19 @@ for (const [name, viewport] of Object.entries(VIEWPORTS)) {
       await noHScroll("overview"); await shot("2-overview");
     });
 
+    test("website setup guides first-run owners and registers the embed snippet", async () => {
+      await go("Website setup");
+      assert.match(await page.locator("main#main").innerText(), /No website origins are registered/);
+      await page.fill('input[name="origin"]', "https://acme.example");
+      await page.getByRole("button", { name: "Add website", exact: true }).click();
+      await page.waitForSelector("text=https://acme.example");
+      const setup = await page.locator("main#main").innerText();
+      assert.match(setup, /data-site-key/);
+      assert.match(setup, /widget\.js/);
+      assert.match(setup, /https:\/\/acme\.example/);
+      await noHScroll("website setup"); await shot("2-website-setup");
+    });
+
     test("leads: urgent first, hostile markup shown as text (no script runs), filters work, detail + status update", async () => {
       await go("Leads");
       const rows = page.locator("tbody tr");
