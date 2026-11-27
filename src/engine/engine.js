@@ -355,7 +355,7 @@ export async function handleMessage(deps, input) {
   const frustrationNote = () => {
     if (!sig.frustration) return;
     notes.push(pick(state, sig.frustration === 2 ? "frusStrong" : "frusMild", sig.frustration === 2 ? SAY.strongFrustration : SAY.mildFrustration));
-    if (upset) for (const k of ["name", "zip", "urgency"]) if (!isFilled(state.slots, k) && !state.settled[k]) state.settled[k] = "skipped"; // upset customer: only what is needed
+    if (upset) for (const k of ["name", "zip", "address", "urgency"]) if (!isFilled(state.slots, k) && !state.settled[k]) state.settled[k] = "skipped"; // upset customer: only what is needed
     if (upset && !state.handoff) {
       if (!state.offeredHandoff) notes.push(`${SAY.frustrationHandoff} ${offerPerson()}`);
       else if (sig.frustration === 2 && !state.pendingOffer) { state.handoff = true; notes.push(SAY.autoHandoff); }
@@ -614,6 +614,11 @@ export async function handleMessage(deps, input) {
     else if (sync.failed && !state.partialFailNoted) { state.partialFailNoted = true; parts.push(`${sync.updateOnly ? SAY.updateNotSaved : SAY.partialNotSaved} ${contactAdvice(kb)}`.trim()); }
     if (sync.failed) for (const ack of [...SAY.updated, ...SAY.fixing, ...SAY.skipped]) { const i = parts.indexOf(ack); if (i >= 0) parts.splice(i, 1); } // never "I've updated that" beside "not saved"
     if (!sync.failed) state.partialFailNoted = false;
+    // The street address is useful, but never blocks a lead when urgency is already known,
+    // the ZIP was declined, contact was declined, or the customer requested a person.
+    if (!state.slots.addressLine1 && (state.slots.urgency || state.settled.zip || state.handoff || state.pendingOffer === "handoff" || state.contactStuck)) {
+      state.settled.address = "skipped";
+    }
     const missing = neededSlots(state);
     const canSave = missing.length === 0 && hasContact(state.slots) && !!state.slots.issue;
     if (canSave && state.leadId && state.emergency) {
