@@ -5,6 +5,7 @@ import { migrate } from "../src/db/migrate-node.js";
 import { MemoryStore } from "../src/ratelimit/limiter.js";
 import { MockMailer, createMailer } from "../src/auth/mailer.js";
 import { createAuthService } from "../src/auth/service.js";
+import { authRepo } from "../src/auth/repo.js";
 import { membersRepo } from "../src/db/members.js";
 import { hashPassword, verifyPassword, parseHash, needsRehash, checkPasswordPolicy, randomToken, randomCode, constantTimeEqual, sha256Hex, PBKDF2_ITERATIONS } from "../src/auth/crypto.js";
 
@@ -450,5 +451,42 @@ describe("concurrent owner membership invariants", () => {
     assert.equal(results.filter((x) => x.status === "rejected").length, 1);
     assert.equal((await w.db.first("SELECT COUNT(*) n FROM memberships WHERE business_id = ? AND role = 'owner'", [w.businessId])).n, 1);
     assert.equal((await w.db.first("SELECT COUNT(*) n FROM audit_log WHERE business_id = ? AND action = 'member_removed'", [w.businessId])).n, 1);
+  });
+});
+
+describe("invitation state transitions", () => {
+  test("revoked and expired invitations cannot create memberships through the repository", async () => {
+    const w = world();
+    const owner = await registered(w, "invite-owner@acme.example");
+    const invitee = await registered(w, "invitee@acme.example");
+    const ownerUser = await w.db.first("SELECT id FROM users WHERE email = ?", [owner.email]);
+    const inviteeUser = await w.db.first("SELECT id FROM users WHERE email = ?", [invitee.email]);
+    const business = await w.db.first("SELECT business_id FROM memberships WHERE user_id = ?", [ownerUser.id]);
+    const M = membersRepo(w.db, business.business_id);
+    const R = authRepo(w.db);
+    const now = new Date(w.c.now()).toISOString();
+
+    const revoked = await M.createInvitation({
+      actorId: ownerUser.id, email: invitee.email, role: "staff",
+      tokenHash: await sha256Hex("revoked-invitation-token"),
+      expiresAt: new Date(w.c.now() + 60_000).toISOString(), now,
+    });
+    await M.revokeInvitation(ownerUser.id, revoked.id, now);
+    await assert.rejects(R.acceptInvitation({
+      invitationId: revoked.id, businessId: business.business_id, userId: inviteeUser.id, role: "staff", now,
+    }), /invitation is not open/);
+    assert.equal(await w.db.first("SELECT user_id FROM memberships WHERE business_id = ? AND user_id = ?", [business.business_id, inviteeUser.id]), null);
+
+    const expired = await M.createInvitation({
+      actorId: ownerUser.id, email: invitee.email, role: "staff",
+      tokenHash: await sha256Hex("expired-invitation-token"),
+      expiresAt: new Date(w.c.now() - 1_000).toISOString(), now,
+    });
+    await assert.rejects(R.acceptInvitation({
+      invitationId: expired.id, businessId: business.business_id, userId: inviteeUser.id, role: "staff", now,
+    }), /invitation is not open/);
+    assert.equal(await w.db.first("SELECT user_id FROM memberships WHERE business_id = ? AND user_id = ?", [business.business_id, inviteeUser.id]), null);
+    assert.equal((await w.db.first("SELECT COUNT(*) n FROM audit_log WHERE business_id = ? AND action = 'invitation_accepted'", [business.business_id])).n, 0);
+    assert.equal((await w.db.first("SELECT COUNT(*) n FROM audit_log WHERE business_id = ? AND action = 'invitation_revoked'", [business.business_id])).n, 1);
   });
 });
