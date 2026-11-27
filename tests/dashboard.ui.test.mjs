@@ -92,8 +92,13 @@ for (const [name, viewport] of Object.entries(VIEWPORTS)) {
       await leadsSeed();
       await page.reload(); await page.waitForSelector("text=Overview");
       await page.waitForSelector(".stat");
-      assert.match(await page.locator("main#main").innerText(), /Urgent, not yet handled/);
-      assert.match(await page.locator("main#main").innerText(), /SIMULATED/);
+      const overview = await page.locator("main#main").innerText();
+      assert.match(overview, /Urgent, not yet handled/);
+      assert.match(overview, /SIMULATED/);
+      assert.match(overview, /Getting started/);
+      assert.match(overview, /Register a website and install the chat widget/);
+      assert.match(overview, /Confirm at least one business fact/);
+      assert.match(overview, /Add a notification contact/);
       await noHScroll("overview"); await shot("2-overview");
     });
 
