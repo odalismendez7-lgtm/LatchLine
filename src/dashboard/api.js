@@ -179,7 +179,7 @@ export function createDashboardApi({ db, auth, mailer, now = Date.now, devMode =
           return out({ ok: true, added: result.added, origins: settings.origins }, result.added ? 201 : 200);
         }
         case "DELETE widget/origins": {
-          const origin = normalizeWebsiteOrigin(body.origin);
+          const origin = normalizeWebsiteOrigin(q.get("origin"));
           if (!origin) return err(400, "invalid_origin");
           const result = await platform.removeBusinessOrigin(bizId, origin);
           if (!result.removed) return err(404, "not_found");
