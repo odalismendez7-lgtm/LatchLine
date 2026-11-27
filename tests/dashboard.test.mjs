@@ -95,10 +95,10 @@ describe("website widget onboarding", () => {
     const duplicate = await A.send("POST", "/widget/origins", { origin: "https://www.example.com" });
     assert.equal(duplicate.status, 200);
     assert.equal(duplicate.data.added, false);
-    const removed = await A.send("DELETE", "/widget/origins", { origin: "https://www.example.com" });
+    const removed = await A.send("DELETE", "/widget/origins?origin=" + encodeURIComponent("https://www.example.com"));
     assert.equal(removed.status, 200);
     assert.deepEqual(removed.data.origins, []);
-    assert.equal((await A.send("DELETE", "/widget/origins", { origin: "https://www.example.com" })).status, 404);
+    assert.equal((await A.send("DELETE", "/widget/origins?origin=" + encodeURIComponent("https://www.example.com"))).status, 404);
     const deniedConfig = await w.app.fetch(new Request("https://latchline.example/api/widget/config?siteKey=" + encodeURIComponent(initial.data.siteKey), { headers: { Origin: "https://www.example.com" } }));
     assert.equal(deniedConfig.status, 404);
     const events = (await A.get("/audit")).data.events;
