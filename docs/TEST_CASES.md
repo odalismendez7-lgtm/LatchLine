@@ -1,6 +1,6 @@
 # Test Cases and Results
 
-Last updated: 2026-11-27 (Step 4 website setup onboarding)
+Last updated: 2026-11-27 (Step 5 authentication and tenant security)
 
 Run all tests: `npm test` (Node 22.5+, no network, no cost). The real-runtime files need the free local `wrangler` dev dependency (`npm install`); they skip with a visible reason without it.
 
@@ -269,3 +269,7 @@ Limits of this run (what it does NOT show):
 ### 2026-11-16: Stage 1 baseline against the Stage 0 prototype (historical)
 
 12 passed, 0 unexpectedly failed, 7 TODO (all confirmed failing). The 7 gaps were: "I smell gas", CO detector, sewage backup, false "electrical" alarm, hours question, rate limiting, demo page not calling the backend. Five of these were fixed in Stage 2 (and are now ordinary tests); two remain TODO.
+
+## 2026-11-27: Step 5 authentication and tenant security
+
+GitHub Actions PR run: [45918958546](https://github.com/odalismendez7-lgtm/LatchLine/actions/runs/45918958546) — **1,279 passed, 0 failed**. New regression coverage verifies concurrent owner demotions/removals cannot leave a business ownerless, revoked/expired invitations cannot create memberships, and failed repeated invitation revocation is not audited as successful. The full suite also covers password hashing, sessions, CSRF, role authorization, tenant scoping, and cross-tenant HTTP access. No hosted D1 or real mail delivery was tested.
