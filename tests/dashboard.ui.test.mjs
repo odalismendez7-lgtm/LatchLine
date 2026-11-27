@@ -107,6 +107,8 @@ for (const [name, viewport] of Object.entries(VIEWPORTS)) {
       assert.match(setup, /data-site-key/);
       assert.match(setup, /widget\.js/);
       assert.match(setup, /https:\/\/acme\.example/);
+      assert.equal(await page.locator("#toast").innerText(), "Website origin added.");
+      await page.waitForFunction(() => document.querySelector("#toast")?.hidden === true);
       await noHScroll("website setup"); await shot("2-website-setup");
     });
 
