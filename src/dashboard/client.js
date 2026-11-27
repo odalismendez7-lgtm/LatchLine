@@ -126,8 +126,9 @@ async function vOverview() {
       const tasks = [
         { label: "Register a website and install the chat widget", done: widget.data.origins.length > 0, view: "widget", action: "Website setup" },
         { label: "Confirm at least one business fact", done: Object.keys(facts.data.settings?.confirmedBy || {}).length > 0, view: "settings", action: "Business settings" },
-        { label: "Add a notification contact", done: contacts.data.contacts.length > 0, view: "contacts", action: "Notification contacts" },
       ];
+      // Only owners can add or change notification contacts; don't present managers with an action they cannot take.
+      if (can("contacts.write")) tasks.push({ label: "Add a notification contact", done: contacts.data.contacts.some((x) => x.enabled), view: "contacts", action: "Notification contacts" });
       const complete = tasks.filter((x) => x.done).length;
       onboarding = h("div", { class: "onboarding" },
         h("h3", null, "Getting started"),
