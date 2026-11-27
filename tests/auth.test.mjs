@@ -472,6 +472,7 @@ describe("invitation state transitions", () => {
       expiresAt: new Date(w.c.now() + 60_000).toISOString(), now,
     });
     await M.revokeInvitation(ownerUser.id, revoked.id, now);
+    await assert.rejects(M.revokeInvitation(ownerUser.id, revoked.id, now), /no open invitation/);
     await assert.rejects(R.acceptInvitation({
       invitationId: revoked.id, businessId: business.business_id, userId: inviteeUser.id, role: "staff", now,
     }), /invitation is not open/);
