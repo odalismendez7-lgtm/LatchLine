@@ -141,9 +141,14 @@ export function dashboardRepo(db, B) {
       return guard(async () => {
         const safeLimit = clamp(limit, 1, 250, 100);
         const ids = await db.all(`SELECT c.id FROM conversations c WHERE c.business_id = ? AND COALESCE((SELECT MAX(m.created_at) FROM messages m WHERE m.business_id = c.business_id AND m.conversation_id = c.id AND m.role = 'customer'), c.created_at) < ? ORDER BY c.created_at LIMIT ?`, [B, cutoffIso, safeLimit]);
-        for (const row of ids) {
-          await db.run("DELETE FROM conversations WHERE id = ? AND business_id = ?", [row.id, B]);
-          await db.run("INSERT INTO audit_log (id, business_id, actor, action, target, detail, created_at) VALUES (?,?,?,?,?,?,?)", [newId("aud"), B, actorId, "retention_expired", row.id, json({ policy: "12_months" }), nowIso()]);
+        if (ids.length) {
+          const t = nowIso();
+          const statements = ids.flatMap((row) => [
+            { sql: "DELETE FROM conversations WHERE id = ? AND business_id = ?", params: [row.id, B] },
+            { sql: "INSERT INTO audit_log (id, business_id, actor, action, target, detail, created_at) VALUES (?,?,?,?,?,?,?)", params: [newId("aud"), B, actorId, "retention_expired", row.id, json({ policy: "12_months" }), t] },
+          ]);
+          // Atomic bounded batch: a failure cannot leave a conversation deleted without its audit event.
+          await db.batch(statements);
         }
         return { deleted: ids.length, hasMore: ids.length === safeLimit };
       });
