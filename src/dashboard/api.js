@@ -9,6 +9,7 @@
 //
 // DEMO vs PRODUCTION: the logic is real (hashing, sessions, throttles), but account emails go
 // through the MOCK mailer, so nobody receives a real verification or reset email. See docs/SECURITY.md.
+import { retentionCutoff12Months } from "../util/retention.js";
 import { authorizeBusiness, maskLead, maskMessages } from "./authz.js";
 import { createContactService } from "./contactService.js";
 import { settingsFromKb, applySettings } from "./settings.js";
@@ -167,7 +168,7 @@ export function createDashboardApi({ db, auth, mailer, now = Date.now, devMode =
 
       switch (key) {
         case "GET privacy/export": { const bundle = await T.dashboard.exportPrivacyBundle(); await T.dashboard.recordExport(actor, bundle.leads.length); return out({ exportedAt: new Date(now()).toISOString(), data: bundle }); }
-        case "POST privacy/retention-run": { const cutoff = new Date(now() - 365 * 24 * 60 * 60 * 1000).toISOString(); const result = await T.dashboard.expireCustomerData(actor, cutoff, 100); return out({ ok: true, cutoff, ...result }); }
+        case "POST privacy/retention-run": { const cutoff = retentionCutoff12Months(now()); const result = await T.dashboard.expireCustomerData(actor, cutoff, 100); return out({ ok: true, cutoff, ...result }); }
         case "GET overview": return out({ role, overview: await T.dashboard.overview(), notificationsNeedingAttention: can(role, "notifications.read") ? (await T.notifications.needsAttention({ now: new Date(now()).toISOString() })).length : undefined });
         case "GET analytics": { try { const from = q.get("from"), to = q.get("to"); return out({ analytics: await T.dashboard.analytics({ from, to }) }); } catch (e) { return e?.code === "invalid_data" ? err(400, "A valid date range of up to 366 days is required") : dbErr(e); } }
         case "GET widget": {
