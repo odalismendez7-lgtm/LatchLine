@@ -332,7 +332,7 @@ export function forBusiness(db, businessId) {
     },
     async recordUsage(metricKey, periodStart, amount = 1) {
       if (typeof metricKey !== "string" || !/^[a-z][a-z0-9_.-]{0,99}$/.test(metricKey)) throw new DbError("invalid_data", "invalid usage metric");
-      if (typeof periodStart !== "string" || !/^\\d{4}-\\d{2}-\\d{2}$/.test(periodStart) || !Number.isFinite(Date.parse(periodStart + "T00:00:00.000Z")) || new Date(periodStart + "T00:00:00.000Z").toISOString().slice(0, 10) !== periodStart) throw new DbError("invalid_data", "invalid usage period");
+      if (typeof periodStart !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(periodStart) || !Number.isFinite(Date.parse(periodStart + "T00:00:00.000Z")) || new Date(periodStart + "T00:00:00.000Z").toISOString().slice(0, 10) !== periodStart) throw new DbError("invalid_data", "invalid usage period");
       if (!Number.isSafeInteger(amount) || amount < 1 || amount > 1000000) throw new DbError("invalid_data", "invalid usage amount");
       return guard(async () => {
         const t = nowIso();
@@ -344,7 +344,7 @@ export function forBusiness(db, businessId) {
     },
     async usage(metricKey, periodStart) {
       if (typeof metricKey !== "string" || !/^[a-z][a-z0-9_.-]{0,99}$/.test(metricKey)) throw new DbError("invalid_data", "invalid usage metric");
-      if (typeof periodStart !== "string" || !/^\\d{4}-\\d{2}-\\d{2}$/.test(periodStart)) throw new DbError("invalid_data", "invalid usage period");
+      if (typeof periodStart !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(periodStart)) throw new DbError("invalid_data", "invalid usage period");
       return guard(async () => {
         const row = await db.first("SELECT count FROM usage_counters WHERE business_id = ? AND metric_key = ? AND period_start = ?", [B, metricKey, periodStart]);
         return row?.count ?? 0;
