@@ -140,7 +140,7 @@ export function dashboardRepo(db, B) {
     async expireCustomerData(actorId, cutoffIso, limit = 100) {
       return guard(async () => {
         const safeLimit = clamp(limit, 1, 250, 100);
-        const ids = await db.all(`SELECT c.id FROM conversations c WHERE c.business_id = ? AND COALESCE((SELECT MAX(m.created_at) FROM messages m WHERE m.business_id = c.business_id AND m.conversation_id = c.id AND m.role = 'customer'), c.created_at) < ? ORDER BY c.created_at LIMIT ?`, [B, cutoffIso, safeLimit]);
+        const ids = await db.all(`SELECT c.id FROM conversations c WHERE c.business_id = ? AND (SELECT MAX(m.created_at) FROM messages m WHERE m.business_id = c.business_id AND m.conversation_id = c.id AND m.role = 'customer') IS NOT NULL AND (SELECT MAX(m.created_at) FROM messages m WHERE m.business_id = c.business_id AND m.conversation_id = c.id AND m.role = 'customer') < ? ORDER BY c.created_at LIMIT ?`, [B, cutoffIso, safeLimit]);
         if (ids.length) {
           const t = nowIso();
           const statements = ids.flatMap((row) => [
