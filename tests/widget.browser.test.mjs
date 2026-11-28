@@ -334,7 +334,7 @@ describe("emergencies through the widget", { skip }, () => {
     await say(page, GAS); await waitFor(page, () => document.querySelector("#latchline-widget-root").shadowRoot.querySelector(".retry"));
     assert.equal(await page.locator(".m.urgent").count(), 1);
     await page.unroute("**/api/chat"); await page.getByRole("button", { name: "Try again" }).click();
-    await waitFor(page, () => { const r = document.querySelector("#latchline-widget-root").shadowRoot; return !r.querySelector(".m.system") && r.querySelectorAll(".m.assistant").length >= 2 && !r.querySelector(".typing.on"); });
+    await waitFor(page, () => { const r = document.querySelector("#latchline-widget-root").shadowRoot; return !r.querySelector(".m.system.bad") && r.querySelectorAll(".m.assistant").length >= 2 && !r.querySelector(".typing.on"); });
     assert.equal(await page.locator(".m.urgent").count(), 1, "exactly one safety message (the real one)");
     assert.equal((await W.api.db.first("SELECT COUNT(*) n FROM leads WHERE business_id = ?", [b.id])).n, 1);
     await ctx.close();
