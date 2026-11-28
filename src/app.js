@@ -25,6 +25,16 @@ import { WIDGET_JS, WIDGET_VERSION } from "./widget/widget.bundle.js";
 const MAX_BODY_BYTES = 8 * 1024;
 const PACKS = { plumbing: plumbingPack };
 
+// Subtract a calendar year in UTC, clamping leap-day/month-end safely.
+export function retentionCutoff12Months(nowMs) {
+  const d = new Date(nowMs);
+  const day = d.getUTCDate();
+  d.setUTCDate(1);
+  d.setUTCFullYear(d.getUTCFullYear() - 1);
+  d.setUTCDate(Math.min(day, new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate()));
+  return d.toISOString();
+}
+
 export function createApp({ db, router = null, store, salt, clientLimit = { limit: 30, windowMs: 60_000 }, businessLimit = { limit: 600, windowMs: 60_000 }, widgetConfigLimit = { limit: 60, windowMs: 60_000 }, now = Date.now, showMockReplies = false, extraKnownOrigins = [], channels = null, accounts = null, mode = "development" }) {
   if (typeof salt !== "string" || salt.length < 8) throw new Error("createApp needs a salt of at least 8 characters");
   const platform = platformRepo(db);
@@ -109,7 +119,7 @@ export function createApp({ db, router = null, store, salt, clientLimit = { limi
 
   async function runScheduled() {
     const out = { reconciled: 0, retentionDeleted: 0, retentionHasMore: 0, errors: [], dispatch: null };
-    const retentionCutoff = new Date(now() - 365 * 24 * 60 * 60 * 1000).toISOString();
+    const retentionCutoff = retentionCutoff12Months(now());
     try {
       for (const id of await platform.activeBusinessIds()) {
         try { const T = forBusiness(db, id); out.reconciled += (await T.notifications.reconcileMissing({ now: new Date(now()).toISOString() })).enqueued; const swept = await T.dashboard.expireCustomerData("system_retention", retentionCutoff, 100); out.retentionDeleted += swept.deleted; if (swept.hasMore) out.retentionHasMore++; }
