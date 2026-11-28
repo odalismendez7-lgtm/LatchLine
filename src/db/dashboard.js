@@ -154,7 +154,7 @@ export function dashboardRepo(db, B) {
       });
     },
     async analytics({ from, to } = {}) {
-      const validDate = (s) => typeof s === "string" && /^\\d{4}-\\d{2}-\\d{2}$/.test(s)
+      const validDate = (s) => typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s)
         && Number.isFinite(Date.parse(s + "T00:00:00.000Z"))
         && new Date(s + "T00:00:00.000Z").toISOString().slice(0, 10) === s;
       if (!validDate(from) || !validDate(to) || from > to) throw new DbError("invalid_data", "analytics requires a valid inclusive date range");
