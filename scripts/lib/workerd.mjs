@@ -37,7 +37,7 @@ export function d1File(persist) {
 }
 
 /** Start `wrangler dev --local`. Resolves when it says it is ready. */
-export async function startWorkerd({ config, persist, port = freePort(), vars = {}, timeoutMs = 60000, testScheduled = false }) {
+export async function startWorkerd({ config, persist, port = freePort(), vars = {}, timeoutMs = 60000, testScheduled = false, retries = 3 }) {
   const args = [WRANGLER, "dev", "--local", "--ip", "127.0.0.1", "--port", String(port), "--persist-to", persist, "-c", config, "--inspector-port", String(port + 1)];
   if (testScheduled) args.push("--test-scheduled"); // exposes GET /cdn-cgi/handler/scheduled to run the cron handler by hand
   for (const [k, v] of Object.entries(vars)) args.push("--var", `${k}:${v}`);
@@ -47,7 +47,11 @@ export async function startWorkerd({ config, persist, port = freePort(), vars = 
   const exited = new Promise((r) => child.on("exit", (code, sig) => r({ code, sig })));
   const start = Date.now();
   while (!/Ready on http/.test(output)) {
-    if (child.exitCode !== null) throw new Error(`wrangler exited early:\n${output.slice(-1500)}`);
+    if (child.exitCode !== null) {
+      const failure = output.slice(-1500);
+      if (/Address already in use|EADDRINUSE/i.test(failure) && retries > 0) return startWorkerd({ config, persist, port: freePort(), vars, timeoutMs, testScheduled, retries: retries - 1 });
+      throw new Error(`wrangler exited early:\n${failure}`);
+    }
     if (Date.now() - start > timeoutMs) { try { process.kill(-child.pid, "SIGKILL"); } catch { /* gone */ } throw new Error(`wrangler did not become ready:\n${output.slice(-1500)}`); }
     await new Promise((r) => setTimeout(r, 100));
   }

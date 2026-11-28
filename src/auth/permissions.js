@@ -24,6 +24,8 @@ const MATRIX = {
   "team.read":            ["owner"],
   "team.write":           ["owner"],
   "audit.read":           ["owner"],
+  "privacy.export":        ["owner"],
+  "privacy.retention":     ["owner"],
 };
 
 export function can(role, action) {

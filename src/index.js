@@ -7,13 +7,14 @@ import { D1Adapter } from "./db/d1-adapter.js";
 import { DbStore, MemoryStore, createLimiter, hashKey } from "./ratelimit/limiter.js";
 import { AIRouter } from "./ai/router.js";
 import { createProvider } from "./ai/registry.js";
+import { DEFAULT_WORKERS_AI_MODEL } from "./ai/workers-ai.js";
 import { createNotifier, createChannelMap } from "./notify/registry.js";
 import { DbMockMailer } from "./auth/mailer.js";
 
 // Two modes, chosen by whether a D1 database is bound as env.DB:
 //   - no DB bound  -> the stateless PROTOTYPE below (what runs today; no storage)
 //   - DB bound     -> the full app in app.js (verified on LOCAL D1 under workerd; UNVERIFIED on hosted D1: KI-15)
-// The AI is always the labeled mock; real providers are refused by the registry.
+// Live AI is opt-in via server-side environment bindings; otherwise the mock remains the default.
 //
 // Owner accounts + dashboard (Stage 5/6) are OFF unless env.LATCHLINE_ACCOUNTS === "mock-local".
 // That mode uses the MOCK mailer only (nothing is ever sent) and exists for local development;
@@ -23,7 +24,11 @@ import { DbMockMailer } from "./auth/mailer.js";
 let appCache = { db: null, key: null, app: null };
 function getApp(env) {
   const accountsOn = env.LATCHLINE_ACCOUNTS === "mock-local";
-  const key = `${accountsOn}|${env.LATCHLINE_DEV_MAILBOX === "1"}`;
+  const aiType = env.LATCHLINE_AI_PROVIDER === "openai" && env.OPENAI_API_KEY && env.OPENAI_MODEL ? "openai"
+    : env.LATCHLINE_AI_PROVIDER === "workers-ai" && env.AI ? "workers-ai" : "mock";
+  const aiModel = aiType === "workers-ai" ? (env.WORKERS_AI_MODEL || DEFAULT_WORKERS_AI_MODEL) : (env.OPENAI_MODEL || "");
+  const emailType = env.LATCHLINE_EMAIL_PROVIDER === "resend" && env.RESEND_API_KEY && env.RESEND_FROM_EMAIL ? "resend" : "mock";
+  const key = `${accountsOn}|${env.LATCHLINE_DEV_MAILBOX === "1"}|${aiType}|${aiModel}|${emailType}|${env.RESEND_FROM_EMAIL || ""}`;
   if (appCache.db !== env.DB || appCache.key !== key) {
     const db = new D1Adapter(env.DB);
     appCache = {
@@ -34,9 +39,13 @@ function getApp(env) {
         db,
         store: new DbStore(db),
         salt: env.RATE_LIMIT_SALT || "",
-        router: new AIRouter({ providers: [createProvider({ type: "mock" })] }),
-        // Mock notifier only: nothing is ever actually sent. Real providers are refused by the registry.
-        channels: createChannelMap([createNotifier({ type: "mock" })]),
+        router: new AIRouter({ providers: [createProvider(aiType === "openai" ? { type: "openai", apiKey: env.OPENAI_API_KEY, model: env.OPENAI_MODEL } : aiType === "workers-ai" ? { type: "workers-ai", ai: env.AI, model: aiModel } : { type: "mock" })], retries: aiType === "workers-ai" ? 0 : 1 }),
+        mode: aiType === "mock" ? "development" : "live-ai",
+        // The mock remains available for unsupported channels; Resend is opt-in and email-only.
+        channels: createChannelMap([
+          ...(emailType === "resend" ? [createNotifier({ type: "resend-email", apiKey: env.RESEND_API_KEY, from: env.RESEND_FROM_EMAIL })] : []),
+          createNotifier({ type: "mock" }),
+        ]),
       }),
     };
   }

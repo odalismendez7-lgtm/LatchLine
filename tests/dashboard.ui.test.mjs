@@ -48,7 +48,7 @@ for (const [name, viewport] of Object.entries(VIEWPORTS)) {
       assert.ok(w.s <= w.c + 1, `${label}: page scrolls horizontally (${w.s} > ${w.c})`);
     };
     const shot = async (n) => { if (SHOTS) { mkdirSync(SHOTS, { recursive: true }); await page.screenshot({ path: `${SHOTS}/${name}-${n}.png`, fullPage: false }); } };
-    const go = async (label) => { await page.getByRole("button", { name: label, exact: true }).click(); await page.waitForFunction(() => !document.querySelector("#main")?.textContent.startsWith("Loading")); };
+    const go = async (label) => { await page.getByRole("navigation", { name: "Sections" }).getByRole("button", { name: label, exact: true }).click(); await page.waitForFunction(() => !document.querySelector("#main")?.textContent.startsWith("Loading")); };
 
     before(async () => {
       ctx = await browser.newContext({ viewport });
@@ -92,9 +92,39 @@ for (const [name, viewport] of Object.entries(VIEWPORTS)) {
       await leadsSeed();
       await page.reload(); await page.waitForSelector("text=Overview");
       await page.waitForSelector(".stat");
-      assert.match(await page.locator("main#main").innerText(), /Urgent, not yet handled/);
-      assert.match(await page.locator("main#main").innerText(), /SIMULATED/);
+      const overview = await page.locator("main#main").innerText();
+      assert.match(overview, /Urgent, not yet handled/);
+      assert.match(overview, /SIMULATED/);
+      assert.match(overview, /Getting started/);
+      assert.match(overview, /Register a website origin/);
+      assert.match(overview, /Confirm at least one business fact/);
+      assert.match(overview, /Add a notification contact/);
       await noHScroll("overview"); await shot("2-overview");
+    });
+
+    test("analytics displays actual lead sample counts and owner-entered outcomes", async () => {
+      await go("Analytics");
+      const content = await page.locator("main#main").innerText();
+      assert.match(content, /Leads in range \(sample size\)/);
+      assert.match(content, /Outcome sample size/);
+      assert.match(content, /Activity by day/);
+      assert.match(content, /No revenue or job value is inferred/);
+      await noHScroll("analytics"); await shot("2-analytics");
+    });
+
+    test("website setup guides first-run owners and registers the embed snippet", async () => {
+      await go("Website setup");
+      assert.match(await page.locator("main#main").innerText(), /No website origins are registered/);
+      await page.fill('input[name="origin"]', "https://acme.example");
+      await page.getByRole("button", { name: "Add website", exact: true }).click();
+      await page.waitForSelector("text=https://acme.example");
+      const setup = await page.locator("main#main").innerText();
+      assert.match(setup, /data-site-key/);
+      assert.match(setup, /widget\.js/);
+      assert.match(setup, /https:\/\/acme\.example/);
+      assert.equal(await page.locator("#toast").innerText(), "Website origin added.");
+      await page.waitForFunction(() => document.querySelector("#toast")?.hidden === true);
+      await noHScroll("website setup"); await shot("2-website-setup");
     });
 
     test("leads: urgent first, hostile markup shown as text (no script runs), filters work, detail + status update", async () => {
@@ -120,7 +150,7 @@ for (const [name, viewport] of Object.entries(VIEWPORTS)) {
     });
 
     test("every section renders without horizontal page scroll and with usable touch targets", async () => {
-      for (const label of ["Overview", "Leads", "Conversations", "Handoffs", "Notifications", "Settings", "Contacts", "Team", "Audit log"]) {
+      for (const label of ["Overview", "Analytics", "Leads", "Conversations", "Handoffs", "Notifications", "Settings", "Contacts", "Team", "Audit log"]) {
         await go(label);
         await noHScroll(label);
         const small = await page.evaluate(() => [...document.querySelectorAll("button, select, input:not([type=checkbox]), a.btn")].filter((e) => e.offsetParent && !e.classList.contains("link")).map((e) => e.getBoundingClientRect()).filter((r) => r.height > 0 && r.height < 36).length);

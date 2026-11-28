@@ -20,6 +20,39 @@ export function spokenDigitsToDigits(text) {
   });
 }
 
+// Parse only an explicitly introduced property address, or a bare street address
+// when the conversation is explicitly waiting for that field. Never guess a location.
+export function extractServiceAddress(rawText, { allowBare = false } = {}) {
+  const raw = String(rawText ?? "").normalize("NFC").trim();
+  if (/[\r\n]/.test(raw)) return {};
+  const match = /(?:service |property )?address(?: is|:)\s*(.+)$/i.exec(raw)
+    ?? (allowBare && /^(?:\d{1,6}\s|P\.?O\.?\s+Box\s+)/i.test(raw) ? [raw, raw] : null);
+  if (!match) return {};
+  let value = match[1].replace(/[.!?]+$/, "").trim().replace(/\s+/g, " ");
+  if (value.length < 5 || value.length > 360 || /[<>\r\n]/.test(value)) return {};
+  const parts = value.split(",").map((part) => part.trim()).filter(Boolean);
+  let street = parts[0] ?? "";
+  let inlineUnit = null;
+  const unitMatch = /^(.*?\S)\s+(apt|apartment|unit|suite|ste|#)\s*#?\s*([A-Za-z0-9-]+)$/i.exec(street);
+  if (unitMatch) { street = unitMatch[1]; inlineUnit = `${unitMatch[2]} ${unitMatch[3]}`; }
+  if (!/^(?:\d{1,6}\s+|P\.?O\.?\s+Box\s+)[\p{L}\p{M}\d .#'’/-]{2,150}$/iu.test(street)) return {};
+  const out = { addressLine1: street.slice(0, 160) };
+  const rest = parts.slice(1);
+  const isUnit = (part) => /^(?:apt|apartment|unit|suite|ste)\b|^#\s*\S+/i.test(part);
+  if (inlineUnit) out.addressLine2 = inlineUnit.slice(0, 100);
+  else if (rest.length && isUnit(rest[0]) && rest[0].length <= 100) out.addressLine2 = rest[0];
+  const locality = rest.filter((part) => !isUnit(part));
+  if (locality.length >= 2) {
+    const state = /^([A-Za-z]{2})(?:\s+\d{5}(?:-\d{4})?)?$/.exec(locality[locality.length - 1]);
+    const city = locality[locality.length - 2];
+    if (state && /^[\p{L}][\p{L} .'-]{1,98}$/u.test(city)) {
+      out.city = city.slice(0, 100);
+      out.state = state[1].toUpperCase();
+    }
+  }
+  return out;
+}
+
 export function extractContact(rawText) {
   const out = {};
   let rest = spokenDigitsToDigits(rawText);
@@ -60,8 +93,10 @@ export function extractName(text) {
 
 export function extractUrgency(text) {
   const t = String(text ?? "").toLowerCase();
-  const wait = /\b(can wait|not urgent|no rush|whenever|later|next week|this week|not right now|not now|not an emergency|routine)\b/.test(t);
-  const now = /\b(right now|happening now|now|asap|today|urgent|immediately|currently|still)\b/.test(t) && !/\bnot (?:right )?now\b/.test(t);
+  const wait = /\b(can wait|not urgent|no rush|whenever|later|next week|this week|not right now|not now|not an emergency|routine|puede esperar|no urge|no es urgente|sin prisa|más adelante|mas adelante|la próxima semana|la proxima semana|la semana que viene)\b/.test(t);
+  const now = /\b(right now|happening now|now|asap|today|urgent|immediately|currently|still|ahora|ahorita|en este momento|está pasando ahora|esta pasando ahora|urgente|hoy|inmediatamente)\b/.test(t)
+    && !/\bnot (?:right )?now\b/.test(t)
+    && !/\bno (?:es )?urgente\b/.test(t);
   if (wait && !now) return "can_wait";
   if (now && !wait) return "now";
   return null;

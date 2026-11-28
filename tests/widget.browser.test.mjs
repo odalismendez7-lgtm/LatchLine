@@ -26,7 +26,7 @@ async function open(b, { viewport = DESKTOP, init, reduced, ctxOpts = {} } = {})
   if (reduced) await page.emulateMedia({ reducedMotion: "reduce" });
   if (init) await page.addInitScript(init);
   const reqs = [], logs = [];
-  page.on("request", (r) => { if (r.url().startsWith(W.apiOrigin)) reqs.push({ url: r.url().replace(W.apiOrigin, ""), method: r.method(), body: r.postData() ? JSON.parse(r.postData()) : null }); });
+  page.on("request", (r) => { if (r.url().startsWith(W.apiOrigin)) reqs.push({ url: r.url().replace(W.apiOrigin, ""), method: r.method(), idempotencyKey: r.headers()["idempotency-key"] ?? null, body: r.postData() ? JSON.parse(r.postData()) : null }); });
   page.on("console", (m) => logs.push(m.text()));
   await page.goto(b.site.url);
   return { ctx, page, reqs, logs, chats: () => reqs.filter((r) => r.url === "/api/chat") };
@@ -180,10 +180,31 @@ describe("conversation through the real backend", { skip }, () => {
     assert.equal(chats().at(-1).body.conversationId, cid);
     await ctx.close();
   });
+  test("recovery: an interrupted in-flight request restores its idempotency key for a safe retry", async () => {
+    const b = await biz(); const { ctx, page, chats } = await open(b); await openChat(page);
+    await page.route("**/api/chat", (r) => r.abort());
+    await say(page, "my kitchen sink is leaking");
+    await waitFor(page, () => document.querySelector("#latchline-widget-root").shadowRoot.querySelector(".retry"));
+    const firstKey = chats()[0]?.idempotencyKey;
+    assert.match(firstKey, /^[a-f0-9]{32}$/);
+    await page.reload(); await openChat(page);
+    await waitFor(page, () => document.querySelector("#latchline-widget-root").shadowRoot.querySelector(".retry"));
+    await page.unroute("**/api/chat");
+    await page.getByRole("button", { name: "Try again" }).click();
+    await replied(page, 2);
+    assert.equal(chats().length, 2);
+    assert.equal(chats()[1].idempotencyKey, firstKey);
+    assert.equal(await page.locator(".m.customer").count(), 1);
+    await ctx.close();
+  });
   test("recovery: when the server no longer has the conversation, the customer is told it is a new one", async () => {
     const b = await biz(); const { ctx, page } = await open(b); await openChat(page);
     await say(page, "my water heater is leaking"); await replied(page, 2);
+    // Simulate a conversation removed by retention/admin cleanup. Disable FK checks only on this test database
+    // so the fixture can represent a missing conversation even if dependent transcript rows remain.
+    W.api.db.exec("PRAGMA foreign_keys = OFF");
     await W.api.db.run("DELETE FROM conversations WHERE business_id = ?", [b.id]);
+    W.api.db.exec("PRAGMA foreign_keys = ON");
     await say(page, "hello?"); await waitFor(page, () => /new one/.test(document.querySelector("#latchline-widget-root").shadowRoot.querySelector(".log").innerText));
     assert.match(await logText(page), /couldn't continue your earlier conversation/);
     await ctx.close();
@@ -236,6 +257,10 @@ describe("failures are never shown as success (desktop)", { skip }, () => {
       await page.getByRole("button", { name: "Try again" }).click(); await replied(page, 2);
       assert.doesNotMatch(await logText(page), /Not confirmed|Not sent|couldn't be sent|may not have been received/);
       assert.equal(await page.locator(".m.customer").count(), 1, "retry reuses the same bubble, no duplicate");
+      const chatRequests = chats();
+      assert.equal(chatRequests.length, 2, "one initial request and one retry");
+      assert.match(chatRequests[0].idempotencyKey, /^[a-f0-9]{32}$/);
+      assert.equal(chatRequests[1].idempotencyKey, chatRequests[0].idempotencyKey, "retry must reuse the original idempotency key");
       await ctx.close();
     });
   }
@@ -309,7 +334,7 @@ describe("emergencies through the widget", { skip }, () => {
     await say(page, GAS); await waitFor(page, () => document.querySelector("#latchline-widget-root").shadowRoot.querySelector(".retry"));
     assert.equal(await page.locator(".m.urgent").count(), 1);
     await page.unroute("**/api/chat"); await page.getByRole("button", { name: "Try again" }).click();
-    await waitFor(page, () => { const r = document.querySelector("#latchline-widget-root").shadowRoot; return !r.querySelector(".m.system") && r.querySelectorAll(".m.assistant").length >= 2 && !r.querySelector(".typing.on"); });
+    await waitFor(page, () => { const r = document.querySelector("#latchline-widget-root").shadowRoot; return !r.querySelector(".m.system.bad") && r.querySelectorAll(".m.assistant").length >= 2 && !r.querySelector(".typing.on"); });
     assert.equal(await page.locator(".m.urgent").count(), 1, "exactly one safety message (the real one)");
     assert.equal((await W.api.db.first("SELECT COUNT(*) n FROM leads WHERE business_id = ?", [b.id])).n, 1);
     await ctx.close();
@@ -517,9 +542,14 @@ describe("Stage 7B review findings (each failed before its fix)", { skip }, () =
   });
   test("focus is not pulled back to the message box if the keyboard user moved elsewhere while waiting", async () => {
     const b = await biz(); const { ctx, page } = await open(b); await openChat(page);
-    await page.route("**/api/chat", async (r) => { await new Promise((x) => setTimeout(x, 600)); r.continue(); });
+    let releaseResponse;
+    const responseGate = new Promise((resolve) => { releaseResponse = resolve; });
+    await page.route("**/api/chat", async (r) => { await responseGate; r.continue(); });
+    await page.waitForFunction(() => { const r = document.querySelector("#latchline-widget-root")?.shadowRoot; return r && r.activeElement === r.querySelector("textarea"); });
     await say(page, "hello there"); await page.locator(".typing.on").waitFor();
-    await inShadow(page, (r) => r.querySelector("header button").focus());
+    const focusedNewChat = await inShadow(page, (r) => { const button = r.querySelector("header button"); button.focus(); return r.activeElement === button; });
+    releaseResponse(); // keep the reply pending until after the keyboard user has moved focus
+    assert.equal(focusedNewChat, true, "the New chat button must receive focus before the reply arrives");
     await replied(page, 2); await page.waitForTimeout(200);
     assert.equal(await inShadow(page, (r) => r.activeElement?.textContent), "New chat");
     await ctx.close();

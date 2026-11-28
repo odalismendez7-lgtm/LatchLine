@@ -6,11 +6,11 @@ LATCHLINE is an AI customer operations platform for service businesses, starting
 
 ## Status
 
-**Early development. Not production-ready.** The repo contains tested building blocks: emergency safety layer (English/Spanish), verified-knowledge retrieval, AI provider interface with a mock, a tenant-isolated database layer, rate limiting, a conversation engine with lead capture, a notification outbox with a mock-only provider adapter (retries, priorities, human-handoff requests), and a local dev server. No real AI is connected, nothing is deployed, there is a **demo** owner login and dashboard (local dev server only; account emails and verification codes are simulated), but no real notification: saved leads reach nobody real (only a mock notifier exists; nothing real is ever sent). See `docs/FEATURE_STATUS.md` and `docs/KNOWN_ISSUES.md`.
+**Early development. Not production-ready.** The repo contains tested building blocks: emergency safety layer (English/Spanish), verified-knowledge retrieval, a tenant-isolated database layer, rate limiting, a conversation engine with lead capture, a notification outbox with retries, priorities, human-handoff requests, a mock provider and an opt-in Resend email adapter, and a local dev server. Opt-in OpenAI Responses and Cloudflare Workers AI adapters now exist; both have only been tested with mocked provider responses, and no real inference or model-quality evaluation has been completed. Workers AI has a free daily allocation on Cloudflare Workers Free, but no account or binding is connected. The mock provider remains the default unless server-side OpenAI configuration is supplied. Nothing is deployed. The owner login and dashboard are local-development prototypes; account emails and verification codes are simulated. No real notification has been sent; Resend is not configured and saved leads still reach nobody real. See `docs/FEATURE_STATUS.md`, `docs/KNOWN_ISSUES.md`, `docs/OPENAI_SETUP.md`, and `docs/RESEND_SETUP.md`, and `docs/WORKERS_AI_SETUP.md`.
 
 ## Project records
 
-All requirements, pricing, architecture, security, test results, and known problems live in [`docs/`](docs/README.md). Start with [`docs/PRODUCT_REQUIREMENTS.md`](docs/PRODUCT_REQUIREMENTS.md).
+All requirements, pricing, architecture, security, test results, and known problems live in [`docs/`](docs/README.md). Start with [`docs/PRODUCT_REQUIREMENTS.md`](docs/PRODUCT_REQUIREMENTS.md). The opt-in OpenAI adapter setup and its privacy gates are documented in [`docs/OPENAI_SETUP.md`](docs/OPENAI_SETUP.md).
 
 ## Run the tests
 

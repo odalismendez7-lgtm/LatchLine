@@ -30,7 +30,7 @@ const B = (p) => "/api/biz/" + encodeURIComponent(S.biz.id) + p;
 const can = (a) => S.biz && S.biz.permissions.includes(a);
 const root = $("#root");
 const fmt = (s) => { try { return new Date(s).toLocaleString(); } catch (e) { return s || ""; } };
-const NICE = { auth_unavailable: "Sign-in is unavailable on this server: password protection could not run. Nothing was changed.", temporarily_unavailable: "The service is temporarily unavailable. Please try again in a few seconds.",  invalid_credentials: "Wrong email or password.", email_not_verified: "Please verify your email first.", rate_limited: "Too many attempts. Please wait and try again.", weak_password: "Use at least 12 characters and avoid common passwords.", invalid_email: "Enter a valid email address.", invalid_business_name: "Enter your business name (2–100 characters).", invalid_token: "That link is invalid or has expired.", network: "Could not reach the server.", cooldown: "Please wait a minute before requesting another code.", daily_limit: "Daily limit reached for this contact.", wrong_code: "That code is not correct.", too_many_attempts: "Too many wrong codes. Send a new code.", expired: "That code has expired. Send a new one.", no_open_code: "No active code. Send a new one.", duplicate: "That contact already exists.", invalid_contact: "That address is not valid." };
+const NICE = { auth_unavailable: "Sign-in is unavailable on this server: password protection could not run. Nothing was changed.", temporarily_unavailable: "The service is temporarily unavailable. Please try again in a few seconds.",  invalid_credentials: "Wrong email or password.", email_not_verified: "Please verify your email first.", rate_limited: "Too many attempts. Please wait and try again.", weak_password: "Use at least 12 characters and avoid common passwords.", invalid_email: "Enter a valid email address.", invalid_business_name: "Enter your business name (2–100 characters).", invalid_token: "That link is invalid or has expired.", network: "Could not reach the server.", cooldown: "Please wait a minute before requesting another code.", daily_limit: "Daily limit reached for this contact.", wrong_code: "That code is not correct.", too_many_attempts: "Too many wrong codes. Send a new code.", expired: "That code has expired. Send a new one.", no_open_code: "No active code. Send a new one.", duplicate: "That contact already exists.", invalid_contact: "That address is not valid.", invalid_origin: "Enter a website origin such as https://example.com. Do not include a page path." };
 const say = (r) => NICE[r.data.error] || NICE[r.data.code] || r.data.error || "Something went wrong.";
 
 function sessionEnded() {
@@ -94,7 +94,7 @@ async function devMailView() {
 }
 
 // ---------------- signed-in app ----------------
-const NAV = [["overview", "Overview", "overview.read"], ["leads", "Leads", "leads.read"], ["conversations", "Conversations", "conversations.read"], ["handoffs", "Handoffs", "handoffs.read"], ["notifications", "Notifications", "notifications.read"], ["settings", "Settings", "settings.read"], ["contacts", "Contacts", "contacts.read"], ["team", "Team", "team.read"], ["audit", "Audit log", "audit.read"]];
+const NAV = [["overview", "Overview", "overview.read"], ["analytics", "Analytics", "overview.read"], ["widget", "Website setup", "settings.read"], ["leads", "Leads", "leads.read"], ["conversations", "Conversations", "conversations.read"], ["handoffs", "Handoffs", "handoffs.read"], ["notifications", "Notifications", "notifications.read"], ["settings", "Settings", "settings.read"], ["contacts", "Contacts", "contacts.read"], ["team", "Team", "team.read"], ["audit", "Audit log", "audit.read"]];
 function shell() {
   const nav = h("nav", { class: "nav", "aria-label": "Sections" }, NAV.filter((n) => can(n[2])).map((n) => h("button", { class: "navbtn" + (S.view === n[0] ? " active" : ""), "aria-current": S.view === n[0] ? "page" : null, onclick: () => { S.view = n[0]; S.openLead = null; render(); } }, n[1])));
   const sel = S.me.businesses.length > 1 ? h("select", { "aria-label": "Business", onchange: (e) => { S.biz = S.me.businesses.find((b) => b.id === e.target.value); S.view = "overview"; render(); } }, S.me.businesses.map((b) => h("option", { value: b.id, selected: b.id === S.biz.id }, b.name + " (" + b.role + ")"))) : h("span", { class: "bizname" }, S.biz.name + " · " + S.biz.role);
@@ -106,7 +106,7 @@ async function render() {
   shell();
   paintToast();
   const m = $("#main"); m.replaceChildren(h("p", { class: "muted" }, "Loading…"));
-  const views = { overview: vOverview, leads: vLeads, conversations: vConvs, handoffs: vHandoffs, notifications: vNotifs, settings: vSettings, contacts: vContacts, team: vTeam, audit: vAudit };
+  const views = { overview: vOverview, analytics: vAnalytics, widget: vWidget, leads: vLeads, conversations: vConvs, handoffs: vHandoffs, notifications: vNotifs, settings: vSettings, contacts: vContacts, team: vTeam, audit: vAudit };
   try { const node = await views[S.view](); m.replaceChildren(node); } catch (e) { m.replaceChildren(h("p", { class: "bad" }, "Could not load this section.")); }
 }
 const chip = (t, cls) => h("span", { class: "chip " + (cls || "") }, t);
@@ -119,11 +119,60 @@ function tbl(cols, rows) {
 
 async function vOverview() {
   const r = await api("GET", B("/overview")); const o = r.data.overview || {};
+  let onboarding = null;
+  if (can("settings.read")) {
+    const [widget, facts, contacts] = await Promise.all([api("GET", B("/widget")), api("GET", B("/settings")), api("GET", B("/contacts"))]);
+    if (widget.ok && facts.ok && contacts.ok) {
+      const tasks = [
+        { label: "Register a website origin", done: widget.data.origins.length > 0, view: "widget", action: "Website setup" },
+        { label: "Confirm at least one business fact", done: Object.keys(facts.data.settings?.confirmedBy || {}).length > 0, view: "settings", action: "Business settings" },
+      ];
+      // Only owners can add or change notification contacts; don't present managers with an action they cannot take.
+      if (can("contacts.write")) tasks.push({ label: "Add a notification contact", done: contacts.data.contacts.some((x) => x.enabled), view: "contacts", action: "Notification contacts" });
+      const complete = tasks.filter((x) => x.done).length;
+      onboarding = h("div", { class: "onboarding" },
+        h("h3", null, "Getting started"),
+        h("p", { class: "muted" }, complete + " of " + tasks.length + " setup tasks completed"),
+        h("ul", { class: "plain" }, tasks.map((x) => h("li", null,
+          h("span", null, (x.done ? "Complete — " : "Next — ") + x.label + " "),
+          h("button", { class: "btn", onclick: () => { S.view = x.view; render(); } }, x.action)))),
+        h("p", { class: "muted" }, "Website registration does not confirm that the widget is installed. Copy the code under Website setup and test it on your site. Notification delivery is simulated in this build; no real email or text is sent."));
+    }
+  }
   const card = (label, n, cls, go) => h("button", { class: "stat " + (cls || ""), onclick: go }, h("span", { class: "num" }, String(n ?? 0)), h("span", null, label));
   return h("section", null, h("h2", null, "Overview"),
+    onboarding,
     h("div", { class: "stats" }, card("New leads", o.leadsNew, "", () => { S.view = "leads"; S.filter = { status: "new" }; render(); }), card("Urgent, not yet handled", o.urgentOpen, o.urgentOpen ? "urgent" : "", () => { S.view = "leads"; S.filter = { urgent: "1" }; render(); }), card("Emergencies with no contact details", o.incompleteEmergency, o.incompleteEmergency ? "urgent" : "", () => { S.view = "leads"; S.filter = { urgent: "1", incomplete: "1" }; render(); }), card("Waiting for a human", o.handoffsOpen, "", () => { S.view = "handoffs"; render(); }), card("All leads", o.leadsTotal, "", () => { S.view = "leads"; S.filter = {}; render(); }), card("Conversations", o.conversationsTotal, "", () => { S.view = "conversations"; render(); })),
     r.data.notificationsNeedingAttention ? h("p", { class: "alert" }, r.data.notificationsNeedingAttention + " notification(s) need attention — the business may NOT have been told about them. ", h("a", { href: "#", onclick: (e) => { e.preventDefault(); S.view = "notifications"; render(); } }, "Review")) : null,
     h("p", { class: "muted" }, "Notifications in this build are SIMULATED (mock provider). No real email or text is sent."));
+}
+
+async function vAnalytics() {
+  const day = (d) => d.toISOString().slice(0, 10);
+  const today = new Date();
+  const defaultTo = day(today);
+  const start = new Date(today); start.setDate(start.getDate() - 29);
+  const defaultFrom = day(start);
+  const r = await api("GET", B("/analytics?from=" + encodeURIComponent(S.analyticsFrom || defaultFrom) + "&to=" + encodeURIComponent(S.analyticsTo || defaultTo)));
+  if (!r.ok) return h("section", null, h("h2", null, "Analytics"), h("p", { class: "bad" }, say(r)));
+  const a = r.data.analytics || {};
+  const range = h("form", { class: "filters", onsubmit: (e) => {
+    e.preventDefault(); const v = vals(e.target);
+    if (!v.from || !v.to || v.from > v.to) { toast("Choose a valid date range.", true); return; }
+    S.analyticsFrom = v.from; S.analyticsTo = v.to; render();
+  } },
+    h("label", null, "From", h("input", { type: "date", name: "from", value: S.analyticsFrom || defaultFrom, required: true })),
+    h("label", null, "To", h("input", { type: "date", name: "to", value: S.analyticsTo || defaultTo, required: true })),
+    h("button", { class: "btn", type: "submit" }, "Apply range"));
+  const stat = (label, value) => h("div", { class: "stat", role: "group" }, h("span", { class: "num" }, String(value ?? 0)), h("span", null, label));
+  const list = (title, rows, key) => h("section", null, h("h3", null, title), rows.length ? tbl([key, "Count"], rows.map((x) => h("tr", null, h("td", null, x[key]), h("td", null, x.count ?? x.leads)))) : empty("No records in this range."));
+  return h("section", null, h("h2", null, "Analytics"), h("p", { class: "muted" }, "Activity is calculated from actual lead records. Date range: " + a.range.from + " through " + a.range.to + " (inclusive)."),
+    range,
+    h("div", { class: "stats" }, stat("Leads in range (sample size)", a.sampleSize), stat("Emergency leads", a.emergencyCount), stat("Won (owner-entered)", a.outcomes?.won), stat("Lost (owner-entered)", a.outcomes?.lost), stat("Outcome sample size", a.outcomes?.sampleSize)),
+    list("Activity by day", a.daily || [], "date"),
+    list("Issues by category", (a.categories || []).map((x) => ({ category: x.category, count: x.count })), "category"),
+    list("Lead status breakdown", a.statuses || [], "status"),
+    h("p", { class: "muted" }, a.methodology || "Counts are based on records in the selected range. No revenue or job value is inferred."));
 }
 
 async function vLeads() {
@@ -156,7 +205,7 @@ async function leadDetail(id) {
   return h("section", null, h("button", { class: "link", onclick: () => { S.openLead = null; render(); } }, "← All leads"), h("h2", null, urgentChip(l.emergency), " ", incompleteChip(l), " ", l.name || "(no name)"),
     l.contact_missing ? h("p", { class: "alert" }, "Incomplete lead: the customer has not given a phone number or email, so you cannot reach them from this record. Read the conversation for what they wrote. If they send details later, this lead updates and you get a follow-up alert.") : null,
     l.contactMasked ? h("p", { class: "muted" }, "Phone and email are hidden for your role.") : null, status,
-    h("dl", { class: "grid" }, row("Phone", l.phone), row("Email", l.email), row("ZIP", l.zip), row("ZIP in verified service area", l.zip_in_verified_area), row("Issue", l.issue_text), row("Category", l.issue_category), row("Urgency", l.urgency), row("Preferred contact", l.preferred_contact), row("Preferred time", l.preferred_time), row("Summary", l.summary), row("Repeat contacts", l.duplicate_count), row("Received", fmt(l.created_at))),
+    h("dl", { class: "grid" }, row("Phone", l.phone), row("Email", l.email), row("Street address", l.address_line1), row("Apartment / unit", l.address_line2), row("City", l.city), row("State", l.state), row("ZIP", l.zip), row("ZIP in verified service area", l.zip_in_verified_area), row("Issue", l.issue_text), row("Category", l.issue_category), row("Urgency", l.urgency), row("Preferred contact", l.preferred_contact), row("Preferred time", l.preferred_time), row("Summary", l.summary), row("Repeat contacts", l.duplicate_count), row("Received", fmt(l.created_at))),
     h("p", null, h("button", { class: "btn", onclick: () => { S.view = "conversations"; S.openConv = l.conversation_id; S.openLead = null; render(); } }, "View conversation")),
     h("h3", null, "Timeline"), h("ul", { class: "plain" }, (l.events || []).map((e) => h("li", null, fmt(e.created_at) + " — " + e.type.replace("_", " ") + (e.detail && e.detail.to ? " → " + e.detail.to : "")))),
     r.data.notifications ? [h("h3", null, "Notifications about this lead"), r.data.notifications.length ? h("ul", { class: "plain" }, r.data.notifications.map((n) => h("li", null, h("strong", null, n.kind + " · " + n.channel + " · " + n.status), h("br"), n.description))) : empty("None recorded.")] : null,
@@ -181,6 +230,40 @@ async function vNotifs() {
     att.length ? h("div", { class: "alert" }, h("strong", null, "Needs attention"), h("ul", { class: "plain" }, att.map((n) => h("li", null, n.kind + " · " + n.priority + " — " + n.description)))) : null,
     list.length ? tbl(["When", "Kind", "Priority", "Channel", "Status", "What it means"], list.map((n) => h("tr", null, h("td", null, fmt(n.created_at)), h("td", null, n.kind), h("td", null, n.priority === "emergency" ? chip("EMERGENCY", "urgent") : n.priority), h("td", null, n.channel), h("td", null, chip(n.status), n.simulated ? chip("simulated", "sim") : null), h("td", null, n.description)))) : empty("No notifications yet."));
 }
+async function vWidget() {
+  const r = await api("GET", B("/widget"));
+  if (!r.ok) return h("section", null, h("h2", null, "Website setup"), h("p", { class: "bad" }, say(r)));
+  const s = r.data, snippet = '<script src="' + location.origin + '/widget.js" data-site-key="' + s.siteKey + '"></script>';
+  const w = can("settings.write");
+  const form = h("form", { class: "filters", onsubmit: async (e) => {
+    e.preventDefault(); const v = vals(e.target);
+    const x = await api("POST", B("/widget/origins"), { origin: v.origin });
+    if (x.ok) { toast(x.data.added ? "Website origin added." : "That origin is already registered."); render(); }
+    else toast(say(x), true);
+  } },
+    h("label", null, "Website origin", h("input", { name: "origin", type: "url", placeholder: "https://example.com", required: true, maxlength: 200, disabled: !w })),
+    w ? h("button", { class: "btn primary", type: "submit" }, "Add website") : null);
+  const origins = s.origins.length ? h("ul", { class: "plain" }, s.origins.map((origin) => h("li", null, h("code", null, origin), w ? h("button", { class: "btn danger", onclick: async () => {
+    if (!window.confirm("Remove " + origin + "? The widget will stop working on that website.")) return;
+    const x = await api("DELETE", B("/widget/origins?origin=" + encodeURIComponent(origin)));
+    if (x.ok) { toast("Website origin removed."); render(); } else toast(say(x), true);
+  } }, "Remove") : null))) : h("p", { class: "muted" }, "No website origins are registered. The widget will not load until you add one.");
+  return h("section", null,
+    h("h2", null, "Website setup"),
+    h("p", null, "Connect the website where customers should see your LATCHLINE plumbing assistant."),
+    h("h3", null, "1. Register your website"),
+    h("p", { class: "muted" }, "Enter the website origin only — for example https://example.com. Do not include a page path. HTTPS is required except for localhost development."),
+    w ? form : h("p", { class: "muted" }, "Your role can view setup but cannot change registered websites."),
+    origins,
+    h("h3", null, "2. Install the chat widget"),
+    h("p", { class: "muted" }, "Copy this script into your website, ideally just before the closing body tag. The site key is public widget configuration, not a password or authentication credential."),
+    h("pre", { class: "snippet" }, snippet),
+    h("button", { class: "btn primary", onclick: async () => { try { await navigator.clipboard.writeText(snippet); toast("Install code copied."); } catch { toast("Copy is unavailable here. Select the code above and copy it manually.", true); } } }, "Copy install code"),
+    h("p", { class: "muted" }, "After installation, open your website and send a test message. Origin checks help restrict normal browser embedding, but an Origin header is not authentication and can be spoofed by non-browser clients."),
+    h("p", { class: "muted" }, "Widget host: ", h("code", null, location.origin + "/widget.js"))
+  );
+}
+
 async function vSettings() {
   const r = await api("GET", B("/settings")); const s = r.data.settings || {}; const w = can("settings.write");
   const ta = (label, name, v, hint) => h("label", null, label, hint ? h("small", null, hint) : null, h("textarea", { name, rows: 2, maxlength: 600, disabled: !w }, v || ""));

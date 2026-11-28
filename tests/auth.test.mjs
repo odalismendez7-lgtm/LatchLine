@@ -5,6 +5,8 @@ import { migrate } from "../src/db/migrate-node.js";
 import { MemoryStore } from "../src/ratelimit/limiter.js";
 import { MockMailer, createMailer } from "../src/auth/mailer.js";
 import { createAuthService } from "../src/auth/service.js";
+import { authRepo } from "../src/auth/repo.js";
+import { membersRepo } from "../src/db/members.js";
 import { hashPassword, verifyPassword, parseHash, needsRehash, checkPasswordPolicy, randomToken, randomCode, constantTimeEqual, sha256Hex, PBKDF2_ITERATIONS } from "../src/auth/crypto.js";
 
 const IT = 2000; // fast test iterations; production default is PBKDF2_ITERATIONS
@@ -412,5 +414,80 @@ describe("hash strength cannot be silently weakened", () => {
     assert.doesNotThrow(mk(undefined));
     assert.doesNotThrow(mk(PBKDF2_ITERATIONS));
     assert.doesNotThrow(mk(1500, { unsafeFastHashForTests: true }));
+  });
+});
+
+describe("concurrent owner membership invariants", () => {
+  async function twoOwners() {
+    const w = world();
+    const a = await registered(w, "owner-a@acme.example");
+    const b = await registered(w, "owner-b@acme.example");
+    const ua = await w.db.first("SELECT id FROM users WHERE email = ?", [a.email]);
+    const ub = await w.db.first("SELECT id FROM users WHERE email = ?", [b.email]);
+    const biz = await w.db.first("SELECT business_id FROM memberships WHERE user_id = ?", [ua.id]);
+    await w.db.run("INSERT INTO memberships (user_id, business_id, role, created_at) VALUES (?,?,?,?)", [ub.id, biz.business_id, "owner", new Date(w.c.now()).toISOString()]);
+    return { ...w, ua, ub, businessId: biz.business_id, members: membersRepo(w.db, biz.business_id) };
+  }
+
+  test("two concurrent owner demotions cannot leave a business with zero owners", async () => {
+    const w = await twoOwners();
+    const results = await Promise.allSettled([
+      w.members.setRole(w.ua.id, w.ub.id, "staff"),
+      w.members.setRole(w.ub.id, w.ua.id, "staff"),
+    ]);
+    assert.equal(results.filter((x) => x.status === "fulfilled").length, 1);
+    assert.equal(results.filter((x) => x.status === "rejected").length, 1);
+    assert.equal((await w.db.first("SELECT COUNT(*) n FROM memberships WHERE business_id = ? AND role = 'owner'", [w.businessId])).n, 1);
+    assert.equal((await w.db.first("SELECT COUNT(*) n FROM audit_log WHERE business_id = ? AND action = 'member_role_changed'", [w.businessId])).n, 1);
+  });
+
+  test("two concurrent owner removals cannot remove the last owner", async () => {
+    const w = await twoOwners();
+    const results = await Promise.allSettled([
+      w.members.remove(w.ua.id, w.ub.id),
+      w.members.remove(w.ub.id, w.ua.id),
+    ]);
+    assert.equal(results.filter((x) => x.status === "fulfilled").length, 1);
+    assert.equal(results.filter((x) => x.status === "rejected").length, 1);
+    assert.equal((await w.db.first("SELECT COUNT(*) n FROM memberships WHERE business_id = ? AND role = 'owner'", [w.businessId])).n, 1);
+    assert.equal((await w.db.first("SELECT COUNT(*) n FROM audit_log WHERE business_id = ? AND action = 'member_removed'", [w.businessId])).n, 1);
+  });
+});
+
+describe("invitation state transitions", () => {
+  test("revoked and expired invitations cannot create memberships through the repository", async () => {
+    const w = world();
+    const owner = await registered(w, "invite-owner@acme.example");
+    const invitee = await registered(w, "invitee@acme.example");
+    const ownerUser = await w.db.first("SELECT id FROM users WHERE email = ?", [owner.email]);
+    const inviteeUser = await w.db.first("SELECT id FROM users WHERE email = ?", [invitee.email]);
+    const business = await w.db.first("SELECT business_id FROM memberships WHERE user_id = ?", [ownerUser.id]);
+    const M = membersRepo(w.db, business.business_id);
+    const R = authRepo(w.db);
+    const now = new Date(w.c.now()).toISOString();
+
+    const revoked = await M.createInvitation({
+      actorId: ownerUser.id, email: invitee.email, role: "staff",
+      tokenHash: await sha256Hex("revoked-invitation-token"),
+      expiresAt: new Date(w.c.now() + 60_000).toISOString(), now,
+    });
+    await M.revokeInvitation(ownerUser.id, revoked.id, now);
+    await assert.rejects(M.revokeInvitation(ownerUser.id, revoked.id, now), /no open invitation/);
+    await assert.rejects(R.acceptInvitation({
+      invitationId: revoked.id, businessId: business.business_id, userId: inviteeUser.id, role: "staff", now,
+    }), /invitation is not open/);
+    assert.equal(await w.db.first("SELECT user_id FROM memberships WHERE business_id = ? AND user_id = ?", [business.business_id, inviteeUser.id]), null);
+
+    const expired = await M.createInvitation({
+      actorId: ownerUser.id, email: invitee.email, role: "staff",
+      tokenHash: await sha256Hex("expired-invitation-token"),
+      expiresAt: new Date(w.c.now() - 1_000).toISOString(), now,
+    });
+    await assert.rejects(R.acceptInvitation({
+      invitationId: expired.id, businessId: business.business_id, userId: inviteeUser.id, role: "staff", now,
+    }), /invitation is not open/);
+    assert.equal(await w.db.first("SELECT user_id FROM memberships WHERE business_id = ? AND user_id = ?", [business.business_id, inviteeUser.id]), null);
+    assert.equal((await w.db.first("SELECT COUNT(*) n FROM audit_log WHERE business_id = ? AND action = 'invitation_accepted'", [business.business_id])).n, 0);
+    assert.equal((await w.db.first("SELECT COUNT(*) n FROM audit_log WHERE business_id = ? AND action = 'invitation_revoked'", [business.business_id])).n, 1);
   });
 });

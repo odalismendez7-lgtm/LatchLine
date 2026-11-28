@@ -1,6 +1,6 @@
 # Roadmap and Future Improvements
 
-Last updated: 2026-11-24 · Each stage ends with: what was built, files changed, tests run, errors/limitations, next step. Nothing deploys publicly or costs money without founder approval.
+Last updated: 2026-11-27 · Each stage ends with: what was built, files changed, tests run, errors/limitations, next step. Nothing deploys publicly or costs money without founder approval.
 
 ## Stages
 
@@ -18,7 +18,7 @@ Last updated: 2026-11-24 · Each stage ends with: what was built, files changed,
 | 6e readiness gate (done, 2026-11-23, **gate NOT passed**) | Safety text now survives business-limit, database and engine failures (R1); systematic tenant-isolation tests; end-to-end emergency workflow tests; KI-52 investigated; KI-55 design. Hosted D1 and real delivery verification blocked by missing access/provider (KI-60, KI-61) | 1067 tests pass; `PRODUCTION_READINESS_GATE.md`, `ALERT_FLOOD_PROTECTION.md` |
 | 7 website chat widget (built, tests pass, 2026-11-24, **not deployed**) | Embeddable widget + `/widget.js` + `/api/widget/config`, honest failure states, emergency safety text on every failure path, recovery/restart/accessibility/phone layout, install guide, reproducible conversation evaluation (found and fixed name-capture, repetition, context defects) | Browser, server and evaluation tests pass; see `WIDGET.md`, `CONVERSATION_EVAL.md`. Not hosted; mock AI only |
 | 7b independent adversarial audit (done, 2026-11-24) | Adversarial conversation/widget/tenant testing plus an independent reviewer; 20+ confirmed defects fixed with regression tests | `WIDGET_AUDIT_7B.md`. Unresolved: KI-62 to KI-68 and earlier KI-55/59/52/60/61/46. **Not production-ready.** Next milestone candidates need founder decisions (hosting, real provider, languages, address, idempotency key) |
-| 7 | Entitlements/plans (no billing), analytics | Entitlement and metric-accuracy tests passing |
+| 7c (in progress, 2026-11-27) | Entitlement/usage backend and owner analytics: migration 0009, tenant-bound resolver, default-deny feature lookup, per-business overrides, atomic usage counters, date-bounded analytics API, and dashboard view. No billing or plan gating activated. | Tests added for tenant isolation, overrides, usage, date validation and analytics; GitHub Actions verification is pending/cancelled on earlier runs. Next: verify CI, then implement guarded limit enforcement and usage instrumentation. |
 | 8 | Security hardening (rate limits, validation, audit log), backup/restore drill, runbooks, readiness report | Full test matrix in `TEST_CASES.md` run and results recorded |
 
 ## Stage 4 (done, 2026-11-18): notifications and human handoff

@@ -2,6 +2,7 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { NotifyError, normalizeNotifyError, validateSendRequest, validateSendResult } from "../src/notify/provider.js";
 import { MockNotifier } from "../src/notify/mock.js";
+import { ResendEmailProvider } from "../src/notify/resend.js";
 import { createNotifier, createChannelMap } from "../src/notify/registry.js";
 import { renderNotification } from "../src/notify/render.js";
 
@@ -77,7 +78,8 @@ describe("mock notifier", () => {
 
 describe("registry", () => {
   test("creates the mock", () => assert.ok(createNotifier({ type: "mock" }) instanceof MockNotifier));
-  test("REFUSES real providers and unknown types", () => {
+  test("creates Resend only with explicit configuration; other real providers remain disabled", () => {
+    assert.ok(createNotifier({ type: "resend-email", apiKey: "test-key", from: "alerts@example.com" }) instanceof ResendEmailProvider);
     for (const type of ["sendgrid", "twilio", "ses", "resend", "email", "sms", "", undefined, null])
       assert.throws(() => createNotifier({ type }), (e) => e.code === "disabled", String(type));
     assert.throws(() => createNotifier(undefined), (e) => e.code === "disabled");
@@ -134,5 +136,70 @@ describe("rendering", () => {
     const m = renderNotification({ kind: "new_lead", priority: "normal", channel: "email", business: { name: "Ac" + String.fromCharCode(0) + "me" }, lead: evil });
     for (const ch of [0, 7, 0x1b, 0x9f]) assert.ok(!(m.subject + m.text).includes(String.fromCharCode(ch)), String(ch));
     assert.match(m.text, /Ja ne/);
+  });
+});
+
+
+describe("Resend email adapter (HTTP mocked)", () => {
+  test("sends plain-text email with the stable idempotency key and never logs the secret", async () => {
+    let captured;
+    const provider = new ResendEmailProvider({
+      apiKey: "re_test_secret",
+      from: "LATCHLINE <alerts@example.com>",
+      fetchImpl: async (url, init) => {
+        captured = { url, init, body: JSON.parse(init.body) };
+        return new Response(JSON.stringify({ id: "email_123" }), { status: 200, headers: { "Content-Type": "application/json" } });
+      },
+    });
+    const result = await provider.send(req());
+    assert.equal(captured.url, "https://api.resend.com/emails");
+    assert.equal(captured.init.headers.Authorization, "Bearer re_test_secret");
+    assert.equal(captured.init.headers["Idempotency-Key"], "key-12345678");
+    assert.deepEqual(captured.body, { from: "LATCHLINE <alerts@example.com>", to: ["o@acme.example"], subject: "Hi", text: "Body" });
+    assert.deepEqual(result, { providerId: "resend", providerMessageId: "email_123", simulated: false });
+    assert.equal(provider.channels.includes("email"), true);
+    assert.equal(provider.channels.includes("sms"), false);
+  });
+
+  test("rejects missing API key or sender and refuses SMS", async () => {
+    assert.throws(() => new ResendEmailProvider({ from: "alerts@example.com" }), (e) => e.code === "disabled");
+    assert.throws(() => new ResendEmailProvider({ apiKey: "x", from: "bad\nFrom" }), (e) => e.code === "disabled");
+    const provider = new ResendEmailProvider({ apiKey: "x", from: "alerts@example.com", fetchImpl: async () => { throw new Error("must not run"); } });
+    await assert.rejects(() => provider.send(req({ channel: "sms", to: "+15125550100", subject: undefined })), (e) => e.code === "invalid_request");
+  });
+
+  test("maps Resend email events to honest delivery states", async () => {
+    for (const [event, expected] of [["sent", "pending"], ["delivery_delayed", "pending"], ["queued", "pending"], ["delivered", "delivered"], ["opened", "delivered"], ["clicked", "delivered"], ["bounced", "failed"], ["suppressed", "failed"], ["complained", "failed"], ["canceled", "failed"], ["failed", "failed"]]) {
+      let url;
+      const provider = new ResendEmailProvider({ apiKey: "x", from: "alerts@example.com", fetchImpl: async (u, init) => {
+        url = u; assert.equal(init.method, "GET");
+        return new Response(JSON.stringify({ id: "email_123", last_event: event }), { status: 200 });
+      } });
+      const result = await provider.getDeliveryStatus("email_123");
+      assert.equal(url, "https://api.resend.com/emails/email_123");
+      assert.equal(result.status, expected, event);
+      if (expected === "failed") assert.equal(result.code, event);
+    }
+  });
+
+  test("does not treat unknown status as delivered and validates provider message IDs", async () => {
+    const provider = new ResendEmailProvider({ apiKey: "x", from: "alerts@example.com", fetchImpl: async () =>
+      new Response(JSON.stringify({ last_event: "unknown_future_state" }), { status: 200 }) });
+    assert.deepEqual(await provider.getDeliveryStatus("email_123"), { status: "pending" });
+    await assert.rejects(() => provider.getDeliveryStatus("../other"), (e) => e.code === "invalid_request");
+  });
+
+  test("maps authentication, sender verification, validation, rate limit and server errors safely", async () => {
+    for (const [status, code, retryable] of [[401, "provider_auth", false], [403, "provider_auth", false], [422, "invalid_request", false], [429, "rate_limited", true], [503, "provider_unavailable", true]]) {
+      const provider = new ResendEmailProvider({ apiKey: "x", from: "alerts@example.com", fetchImpl: async () => new Response("private provider detail", { status }) });
+      await assert.rejects(() => provider.send(req()), (e) => e.code === code && e.retryable === retryable && !e.message.includes("private"));
+    }
+  });
+
+  test("requires a valid provider message ID and bounds idempotency keys", async () => {
+    const empty = new ResendEmailProvider({ apiKey: "x", from: "alerts@example.com", fetchImpl: async () => new Response(JSON.stringify({}), { status: 200 }) });
+    await assert.rejects(() => empty.send(req()), (e) => e.code === "invalid_response");
+    const longKey = new ResendEmailProvider({ apiKey: "x", from: "alerts@example.com", fetchImpl: async () => { throw new Error("must not run"); } });
+    await assert.rejects(() => longKey.send(req({ idempotencyKey: "x".repeat(257) })), (e) => e.code === "invalid_request");
   });
 });

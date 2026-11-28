@@ -138,14 +138,14 @@ function main() {
         if (Array.isArray(raw.msgs)) {
           for (const m of raw.msgs.slice(-MAX_STORED)) {
             if (!m || !["customer", "assistant", "system"].includes(m.role) || typeof m.text !== "string") continue;
-            S.msgs.push({ id: ++S.seq, role: m.role, text: m.text.slice(0, m.role === "customer" ? MAX_MESSAGE_CHARS : 4000), urgent: m.urgent === true, note: typeof m.note === "string" ? m.note.slice(0, 200) : undefined, status: m.role === "customer" ? (m.status === "sent" ? "sent" : "unconfirmed") : undefined, bad: m.bad === true });
+            S.msgs.push({ id: ++S.seq, role: m.role, text: m.text.slice(0, m.role === "customer" ? MAX_MESSAGE_CHARS : 4000), urgent: m.urgent === true, note: typeof m.note === "string" ? m.note.slice(0, 200) : undefined, status: m.role === "customer" ? (m.status === "sent" ? "sent" : "unconfirmed") : undefined, bad: m.bad === true, idempotencyKey: m.role === "customer" && typeof m.idempotencyKey === "string" && /^[a-f0-9]{32}$/.test(m.idempotencyKey) ? m.idempotencyKey : undefined });
           }
         }
       } catch { /* storage unavailable */ }
     },
     save() {
       try {
-        const msgs = S.msgs.filter((m) => !m.transient).slice(-MAX_STORED).map((m) => ({ role: m.role, text: m.text, urgent: m.urgent, status: m.status, bad: m.bad, note: m.note }));
+        const msgs = S.msgs.filter((m) => !m.transient).slice(-MAX_STORED).map((m) => ({ role: m.role, text: m.text, urgent: m.urgent, status: m.status, bad: m.bad, note: m.note, idempotencyKey: m.idempotencyKey }));
         sessionStorage.setItem(storeKey, JSON.stringify({ ts: Date.now(), cid: S.cid, msgs }));
       } catch { /* ignore */ }
     },
@@ -155,6 +155,10 @@ function main() {
   // ---- DOM ----
   const host = h("div", { id: "latchline-widget-root" });
   const shadow = host.attachShadow({ mode: "open" });
+  let focusMovedWhileSending = false;
+  shadow.addEventListener("focusin", (event) => {
+    if (S.busy && event.target !== els.input && event.target !== els.send) focusMovedWhileSending = true;
+  });
   const root = h("div", { class: `root ${side}` });
   root.style.setProperty("--accent", accent);
   const els = {};
@@ -218,7 +222,7 @@ function main() {
     const nearBottom = els.log.scrollHeight - els.log.scrollTop - els.log.clientHeight < 80;
     const have = new Map([...els.log.children].map((e) => [e.getAttribute("data-id"), e]));
     let prev = null;
-    for (const m of [{ id: 0, role: "assistant", text: S.cfg.welcome }, ...S.msgs]) {
+    for (const m of [{ id: 0, role: "assistant", text: S.cfg.welcome }, { id: -1, role: "system", text: "Privacy: This chat collects details to help a plumbing business review your service request. Messages may be processed by an AI service and shared with the business and configured service providers. Do not enter account credentials, payment details, Social Security numbers, or unrelated sensitive information. The business is responsible for its privacy notice, retention and deletion practices." }, ...S.msgs]) {
       const old = have.get(String(m.id)); have.delete(String(m.id));
       if (old && old.__sig === sigOf(m)) { prev = old; continue; }
       const el = line(m); el.__sig = sigOf(m);
@@ -231,6 +235,16 @@ function main() {
     if (nearBottom || S.busy) els.log.scrollTop = els.log.scrollHeight;
   }
   const add = (m) => { m.id = ++S.seq; S.msgs.push(m); return m; };
+  function newIdempotencyKey() {
+    try {
+      const bytes = new Uint8Array(16);
+      crypto.getRandomValues(bytes);
+      return [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+    } catch {
+      // A deduplication token, not an authentication credential.
+      return Array.from({ length: 4 }, () => Math.floor(Math.random() * 0x100000000).toString(16).padStart(8, "0")).join("");
+    }
+  }
   const announce = (t) => { els.status.textContent = ""; setTimeout(() => { els.status.textContent = t; }, 30); };
 
   // ---- open / close / focus ----
@@ -297,13 +311,15 @@ function main() {
     let m = retry;
     if (m) { S.msgs = S.msgs.filter((x) => x.related !== m.id); m.status = "sending"; }
     else m = add({ role: "customer", text: norm.value, status: "sending" });
-    S.busy = true; render(); announce(`${display()} is typing`);
+    if (!m.idempotencyKey) m.idempotencyKey = newIdempotencyKey();
+    focusMovedWhileSending = false;
+    S.busy = true; store.save(); render(); announce(`${display()} is typing`);
     const gen = S.gen, ctl = new AbortController(); S.ctl = ctl;
     const timer = setTimeout(() => ctl.abort(), REQUEST_TIMEOUT_MS);
     try {
       let res;
       try {
-        res = await fetch(`${api}/api/chat`, { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "omit", signal: ctl.signal, body: JSON.stringify({ siteKey, message: norm.value, conversationId: S.cid }) });
+        res = await fetch(`${api}/api/chat`, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": m.idempotencyKey }, credentials: "omit", signal: ctl.signal, body: JSON.stringify({ siteKey, message: norm.value, conversationId: S.cid }) });
       } catch { if (gen === S.gen) failure(m, "unconfirmed", T.network); return; }
       let data = null;
       try { data = await res.json(); } catch { /* handled below */ }
@@ -327,8 +343,9 @@ function main() {
       clearTimeout(timer);
       if (gen === S.gen) {
         S.busy = false; S.ctl = null; store.save(); render();
-        const a = shadow.activeElement; // give focus back only if it is not somewhere the customer deliberately moved it
-        if (S.open && (!a || a === els.send || a === els.log || a === els.input)) els.input.focus();
+        const a = shadow.activeElement;
+        // Do not steal focus if the customer moved it while the reply was pending, even if the browser later blurs that control.
+        if (S.open && !focusMovedWhileSending && (!a || a === els.send || a === els.log || a === els.input)) els.input.focus();
       }
     }
   }

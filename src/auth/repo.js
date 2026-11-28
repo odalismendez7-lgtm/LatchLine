@@ -9,6 +9,10 @@ const auditStmt = (businessId, actor, action, target, detail = {}, now = nowIso(
   sql: "INSERT INTO audit_log (id, business_id, actor, action, target, detail, created_at) VALUES (?,?,?,?,?,?,?)",
   params: [newId("aud"), businessId ?? null, actor, action, target ?? null, json(detail), now],
 });
+const auditIfChangedStmt = (businessId, actor, action, target, detail = {}, now = nowIso()) => ({
+  sql: "INSERT INTO audit_log (id, business_id, actor, action, target, detail, created_at) SELECT ?,?,?,?,?,?,? WHERE changes() = 1",
+  params: [newId("aud"), businessId ?? null, actor, action, target ?? null, json(detail), now],
+});
 
 export function authRepo(db) {
   return Object.freeze({
@@ -100,9 +104,11 @@ export function authRepo(db) {
     async acceptInvitation({ invitationId, businessId, userId, role, now }) {
       return guard(async () => {
         const r = await db.batch([
-          { sql: "UPDATE invitations SET accepted_at = ? WHERE id = ? AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > ?", params: [now, invitationId, now] },
-          { sql: "INSERT OR IGNORE INTO memberships (user_id, business_id, role, created_at) VALUES (?,?,?,?)", params: [userId, businessId, role, now] },
-          auditStmt(businessId, userId, "invitation_accepted", invitationId, { role }, now),
+          { sql: "UPDATE invitations SET accepted_at = ? WHERE id = ? AND business_id = ? AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > ?", params: [now, invitationId, businessId, now] },
+          // Both the audit and membership insert depend on the guarded UPDATE. A revoked,
+          // expired, or already-used invite must never create membership as a side effect.
+          auditIfChangedStmt(businessId, userId, "invitation_accepted", invitationId, { role }, now),
+          { sql: "INSERT OR IGNORE INTO memberships (user_id, business_id, role, created_at) SELECT ?,?,?,? WHERE changes() = 1", params: [userId, businessId, role, now] },
         ]);
         if (r[0].changes !== 1) throw new DbError("not_found", "invitation is not open");
       });

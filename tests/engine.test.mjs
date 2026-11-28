@@ -8,7 +8,7 @@ import { AIRouter } from "../src/ai/router.js";
 import { MockProvider } from "../src/ai/mock.js";
 import { handleMessage, MAX_MESSAGES_PER_CONVERSATION } from "../src/engine/engine.js";
 import { guardAiReply } from "../src/engine/guard.js";
-import { extractContact, extractName, extractUrgency } from "../src/engine/extract.js";
+import { extractContact, extractServiceAddress, extractName, extractUrgency } from "../src/engine/extract.js";
 
 const V = { verified: true, verifiedBy: "owner", verifiedAt: "2026-11-01" };
 const kbDoc = (id, name, extra = {}) => ({
@@ -40,6 +40,27 @@ async function fullLead(deps, { phone = "512-555-0142", name = "Jane Doe", zip =
   r = await handleMessage(deps, { message: "it can wait", conversationId: id });
   return { r, id };
 }
+
+
+describe("Spanish deterministic lead prompts", () => {
+  test("asks for the next lead detail in Spanish after a Spanish plumbing inquiry", async () => {
+    const { deps } = await setup();
+    const r = await handleMessage(deps("acme-plumbing"), { message: "Necesito ayuda con una fuga de agua en mi cocina" });
+    assert.equal(r.ok, true);
+    assert.match(r.reply, /nombre y apellido/i);
+    assert.doesNotMatch(r.reply, /first and last name/i);
+  });
+
+  test("uses Spanish retry wording for an invalid phone number", async () => {
+    const { deps } = await setup();
+    let r = await handleMessage(deps("acme-plumbing"), { message: "Tengo una fuga de agua en la cocina" });
+    const id = r.conversationId;
+    r = await handleMessage(deps("acme-plumbing"), { message: "Juan Pérez", conversationId: id });
+    r = await handleMessage(deps("acme-plumbing"), { message: "123", conversationId: id });
+    assert.match(r.reply, /teléfono válido/i);
+    assert.doesNotMatch(r.reply, /valid US phone number/i);
+  });
+});
 
 describe("input validation", () => {
   test("rejects empty, whitespace, non-string, and oversize messages", async () => {
@@ -84,6 +105,55 @@ describe("happy path lead capture", () => {
     r = await handleMessage(d, { message: "can wait", conversationId: id });
     assert.equal(r.leadStatus, "saved");
     assert.equal((await A.leads.list())[0].name, "John Smith");
+  });
+  test("persists customer-provided service address parts with the lead", async () => {
+    const { deps, A } = await setup();
+    let r = await handleMessage(deps("acme-plumbing"), { message: "my toilet is leaking, service address is 123 Main St, Apt 4, Bronx, NY 10467" });
+    const id = r.conversationId;
+    r = await handleMessage(deps("acme-plumbing"), { message: "Jane Doe", conversationId: id });
+    r = await handleMessage(deps("acme-plumbing"), { message: "512-555-0142", conversationId: id });
+    r = await handleMessage(deps("acme-plumbing"), { message: "it can wait", conversationId: id });
+    assert.equal(r.leadStatus, "saved");
+    const lead = (await A.leads.list())[0];
+    assert.equal(lead.address_line1, "123 Main St");
+    assert.equal(lead.address_line2, "Apt 4");
+    assert.equal(lead.city, "Bronx");
+    assert.equal(lead.state, "NY");
+    assert.equal(lead.zip, "10467");
+  });
+  test("customer can skip the optional street address and still save the lead", async () => {
+    const { deps, A } = await setup();
+    let r = await handleMessage(deps("acme-plumbing"), { message: "my kitchen faucet keeps dripping all day" });
+    const id = r.conversationId;
+    r = await handleMessage(deps("acme-plumbing"), { message: "Jane Doe", conversationId: id });
+    r = await handleMessage(deps("acme-plumbing"), { message: "512-555-0142", conversationId: id });
+    r = await handleMessage(deps("acme-plumbing"), { message: "62701", conversationId: id });
+    assert.match(r.reply, /street address/i);
+    r = await handleMessage(deps("acme-plumbing"), { message: "skip", conversationId: id });
+    assert.match(r.reply, /happening right now|can it wait/i);
+    r = await handleMessage(deps("acme-plumbing"), { message: "it can wait", conversationId: id });
+    assert.equal(r.leadStatus, "saved");
+    const lead = (await A.leads.list())[0];
+    assert.equal(lead.address_line1, null);
+    assert.equal(lead.zip, "62701");
+  });
+  test("accepts a bare street address only while the address field is being requested", async () => {
+    const { deps, A } = await setup();
+    let r = await handleMessage(deps("acme-plumbing"), { message: "my kitchen faucet keeps dripping all day" });
+    const id = r.conversationId;
+    r = await handleMessage(deps("acme-plumbing"), { message: "Jane Doe", conversationId: id });
+    r = await handleMessage(deps("acme-plumbing"), { message: "512-555-0142", conversationId: id });
+    r = await handleMessage(deps("acme-plumbing"), { message: "62701", conversationId: id });
+    assert.match(r.reply, /street address/i);
+    r = await handleMessage(deps("acme-plumbing"), { message: "123 Main Street, Springfield, IL 62701", conversationId: id });
+    assert.match(r.reply, /happening right now|can it wait/i);
+    r = await handleMessage(deps("acme-plumbing"), { message: "it can wait", conversationId: id });
+    assert.equal(r.leadStatus, "saved");
+    const lead = (await A.leads.list())[0];
+    assert.equal(lead.address_line1, "123 Main Street");
+    assert.equal(lead.city, "Springfield");
+    assert.equal(lead.state, "IL");
+    assert.equal(lead.zip, "62701");
   });
   test("ZIP outside the verified list is stored as unconfirmed, not refused", async () => {
     const { deps, A } = await setup();
@@ -134,6 +204,16 @@ describe("validation inside the conversation", () => {
 });
 
 describe("extractors", () => {
+  test("extracts an explicitly supplied structured service address", () => {
+    assert.deepEqual(extractServiceAddress("service address is 123 Main St, Apt 4, Bronx, NY 10467"), {
+      addressLine1: "123 Main St", addressLine2: "Apt 4", city: "Bronx", state: "NY",
+    });
+    assert.deepEqual(extractServiceAddress("my sink is leaking near the kitchen"), {});
+    assert.deepEqual(extractServiceAddress("123 Main St, Bronx, NY 10467"), {});
+    assert.deepEqual(extractServiceAddress("123 Main St, Bronx, NY 10467", { allowBare: true }), {
+      addressLine1: "123 Main St", city: "Bronx", state: "NY",
+    });
+  });
   test("extractContact returns only valid values", () => {
     assert.deepEqual(extractContact("call 512-555-0142 or a@b.com zip 62701"), { email: "a@b.com", phone: "+15125550142", zip: "62701" });
     assert.deepEqual(extractContact("call 000-000-0000"), {});
@@ -151,6 +231,10 @@ describe("extractors", () => {
     assert.equal(extractUrgency("it can wait"), "can_wait");
     assert.equal(extractUrgency("banana"), null);
     assert.equal(extractUrgency("not right now, can wait"), "can_wait");
+    assert.equal(extractUrgency("Está pasando ahora, es urgente"), "now");
+    assert.equal(extractUrgency("Puede esperar, no es urgente"), "can_wait");
+    assert.equal(extractUrgency("No urge, sin prisa"), "can_wait");
+    assert.equal(extractUrgency("No es urgente, puede esperar"), "can_wait");
   });
 });
 

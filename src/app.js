@@ -21,12 +21,13 @@ import { createAuthService } from "./auth/service.js";
 import { createDashboardApi } from "./dashboard/api.js";
 import { dashboardPage } from "./dashboard/page.js";
 import { WIDGET_JS, WIDGET_VERSION } from "./widget/widget.bundle.js";
+import { retentionCutoff12Months } from "./util/retention.js";
 
 const MAX_BODY_BYTES = 8 * 1024;
-const MODE = "development"; // honest label: mock AI only; shown by the widget
 const PACKS = { plumbing: plumbingPack };
 
-export function createApp({ db, router = null, store, salt, clientLimit = { limit: 30, windowMs: 60_000 }, businessLimit = { limit: 600, windowMs: 60_000 }, widgetConfigLimit = { limit: 60, windowMs: 60_000 }, now = Date.now, showMockReplies = false, extraKnownOrigins = [], channels = null, accounts = null }) {
+
+export function createApp({ db, router = null, store, salt, clientLimit = { limit: 30, windowMs: 60_000 }, businessLimit = { limit: 600, windowMs: 60_000 }, widgetConfigLimit = { limit: 60, windowMs: 60_000 }, now = Date.now, showMockReplies = false, extraKnownOrigins = [], channels = null, accounts = null, mode = "development" }) {
   if (typeof salt !== "string" || salt.length < 8) throw new Error("createApp needs a salt of at least 8 characters");
   const platform = platformRepo(db);
   const clientLimiter = createLimiter({ store, ...clientLimit, now });
@@ -45,7 +46,7 @@ export function createApp({ db, router = null, store, salt, clientLimit = { limi
         ...baseHeaders,
         "Access-Control-Allow-Origin": corsOrigin || "null",
         "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type",
+        "Access-Control-Allow-Headers": "Content-Type, Idempotency-Key",
         ...extra,
       },
     });
@@ -93,7 +94,7 @@ export function createApp({ db, router = null, store, salt, clientLimit = { limi
       return {
         reply: `${composeSafetyReply(safety, { leadSystemConnected: false })}\n\n${NOT_SAVED[reason] ?? NOT_SAVED.unavailable}`,
         conversationId: null, urgent: true, leadStatus: "not_saved", persisted: false, rateLimited: reason === "rate", notSavedReason: reason,
-        degraded: { database: false, ai: false }, mode: "development",
+        degraded: { database: false, ai: false }, mode,
       };
     } catch { return null; }
   }
@@ -109,11 +110,12 @@ export function createApp({ db, router = null, store, salt, clientLimit = { limi
   };
 
   async function runScheduled() {
-    const out = { reconciled: 0, errors: [], dispatch: null };
+    const out = { reconciled: 0, retentionDeleted: 0, retentionHasMore: 0, errors: [], dispatch: null };
+    const retentionCutoff = retentionCutoff12Months(now());
     try {
       for (const id of await platform.activeBusinessIds()) {
-        try { out.reconciled += (await forBusiness(db, id).notifications.reconcileMissing({ now: new Date(now()).toISOString() })).enqueued; }
-        catch { if (!out.errors.includes("reconcile_failed")) out.errors.push("reconcile_failed"); }
+        try { const T = forBusiness(db, id); out.reconciled += (await T.notifications.reconcileMissing({ now: new Date(now()).toISOString() })).enqueued; const swept = await T.dashboard.expireCustomerData("system_retention", retentionCutoff, 100); out.retentionDeleted += swept.deleted; if (swept.hasMore) out.retentionHasMore++; }
+        catch { if (!out.errors.includes("scheduled_tenant_failed")) out.errors.push("scheduled_tenant_failed"); }
       }
     } catch { out.errors.push("database_unavailable"); }
     out.dispatch = channels ? await dispatchDue({ db, channels, now: () => new Date(now()).toISOString() }) : null;
@@ -133,7 +135,7 @@ export function createApp({ db, router = null, store, salt, clientLimit = { limi
           const ok = await originKnown(origin);
           return new Response(null, {
             status: ok ? 204 : 403,
-            headers: ok ? { "Access-Control-Allow-Origin": origin, "Access-Control-Allow-Methods": "GET, POST, OPTIONS", "Access-Control-Allow-Headers": "Content-Type", "Access-Control-Max-Age": "600", Vary: "Origin" } : { Vary: "Origin" },
+            headers: ok ? { "Access-Control-Allow-Origin": origin, "Access-Control-Allow-Methods": "GET, POST, OPTIONS", "Access-Control-Allow-Headers": "Content-Type, Idempotency-Key", "Access-Control-Max-Age": "600", Vary: "Origin" } : { Vary: "Origin" },
           });
         }
 
@@ -157,7 +159,7 @@ export function createApp({ db, router = null, store, salt, clientLimit = { limi
           try { business = await platform.businessBySiteKey(url.searchParams.get("siteKey")); } catch { return json({ error: "Service temporarily unavailable", retryable: true }, 503, cors); }
           if (!business || business.status !== "active" || !asked || !business.origins.includes(asked)) return json({ error: "Not available" }, 404, cors);
           const name = String(business.name).slice(0, 120);
-          return json({ name, welcome: `Hi, this is the ${name} website assistant. What can I help you with?`, mode: MODE, maxMessageChars: MAX_MESSAGE_CHARS, apiVersion: 1 }, 200, asked, { "Cache-Control": "private, max-age=60" });
+          return json({ name, welcome: `Hi, this is the ${name} website assistant. What can I help you with?`, mode, maxMessageChars: MAX_MESSAGE_CHARS, apiVersion: 1 }, 200, asked, { "Cache-Control": "private, max-age=60" });
         }
 
         if (dashboard) {
@@ -169,7 +171,7 @@ export function createApp({ db, router = null, store, salt, clientLimit = { limi
         if (url.pathname === "/health" && request.method === "GET") {
           let databaseConnected = false;
           try { databaseConnected = (await platform.ping()) === true; } catch { databaseConnected = false; }
-          return json({ ok: databaseConnected, service: "LATCHLINE API", mode: "development", realAIConnected: false, databaseConnected, note: "Mock AI only. Not production-ready." }, databaseConnected ? 200 : 503, (await originKnown(origin)) ? origin : "");
+          return json({ ok: databaseConnected, service: "LATCHLINE API", mode, realAIConfigured: mode === "live-ai", realAIConnected: false, databaseConnected, note: mode === "live-ai" ? "Live AI configured; other production gates may remain." : "Mock AI only. Not production-ready." }, databaseConnected ? 200 : 503, (await originKnown(origin)) ? origin : "");
         }
 
         if (url.pathname === "/api/chat" && request.method === "POST") {
@@ -201,28 +203,66 @@ export function createApp({ db, router = null, store, salt, clientLimit = { limi
 
           let business;
           try { business = await platform.businessBySiteKey(body.siteKey); } catch { return (await safetyFallback("unavailable", cors || "*")) ?? json({ error: "Service temporarily unavailable", retryable: true }, 503, cors); }
-          if (!business) return json({ error: "Unknown site key" }, 404, cors);
-          if (business.status !== "active") return json({ error: "This chat is not available" }, 403, cors);
-          if (!origin || !business.origins.includes(origin)) return json({ error: "Origin not allowed" }, 403, "");
+          if (!business || business.status !== "active" || !origin || !business.origins.includes(origin)) {
+            // Do not let a caller distinguish a real site key from an origin mismatch or suspended tenant.
+            // The key is public, but this avoids turning the endpoint into a tenant-enumeration oracle.
+            return json({ error: "Chat unavailable" }, 404, "");
+          }
 
           const bl = await businessLimiter.check(await hashKey(salt, "business", business.id));
           if (!bl.allowed) return (await safetyFallback("busy", origin)) ?? json({ error: "This chat is busy. Please try again shortly.", retryAfterSec: bl.retryAfterSec }, 429, origin, { "Retry-After": String(bl.retryAfterSec) });
 
+          // Validate the customer message before claiming an idempotency key. Otherwise a malformed
+          // request could leave a permanent "processing" row that blocks a corrected retry.
+          const normalized = normalizeMessage(body.message);
+          if (!normalized.ok) {
+            if (normalized.reason === "too_long") {
+              const e = await safetyOnlyReply(bodyCopy, "toolong");
+              if (e) return json(e, 200, origin);
+            }
+            return json({ error: "Message must be 1–1200 characters", code: normalized.error || normalized.reason }, 400, origin);
+          }
+
+          // Optional idempotency key: replay a completed response for a client retry.
+          // The ledger is tenant-scoped and claimed atomically via INSERT OR IGNORE.
+          const requestKey = request.headers.get("Idempotency-Key") || "";
+          let dedupClaimed = false;
+          const conversationId = typeof body.conversationId === "string" ? body.conversationId.slice(0, 80) : null;
+          if (requestKey) {
+            if (!/^[A-Za-z0-9._:-]{8,128}$/.test(requestKey)) return json({ error: "Invalid idempotency key" }, 400, origin);
+            // A key identifies one exact logical request. Reusing it with edited content
+            // must not silently replay a response belonging to a different message.
+            const requestFingerprint = await hashKey(salt, "chat-request", JSON.stringify({ message: normalized.value, conversationId }));
+            const t = new Date(now()).toISOString();
+            const claim = await db.run("INSERT OR IGNORE INTO chat_request_dedup (business_id, request_key, payload_hash, status, created_at, updated_at) VALUES (?,?,?, 'processing', ?, ?)", [business.id, requestKey, requestFingerprint, t, t]);
+            const record = await db.first("SELECT status, payload_hash, response_json FROM chat_request_dedup WHERE business_id = ? AND request_key = ?", [business.id, requestKey]);
+            if (!record) throw new Error("Dedup claim missing");
+            if (record.payload_hash !== requestFingerprint) return json({ error: "Idempotency key was already used for a different request", code: "idempotency_key_conflict" }, 409, origin);
+            if (record.status === "completed" && record.response_json) return json(JSON.parse(record.response_json), 200, origin);
+            if (record.status === "processing" && !claim.changes) return json({ error: "Request already processing", retryable: true }, 409, origin);
+            dedupClaimed = true;
+          }
+
           const kb = await loadKnowledge(business.id);
           const result = await handleMessage(
             { db, businessId: business.id, kb, router, pack: PACKS[business.industry] ?? plumbingPack, showMockReplies },
-            { message: body.message, conversationId: typeof body.conversationId === "string" ? body.conversationId.slice(0, 80) : null }
+            { message: normalized.value, conversationId }
           );
           if (result.notificationsQueued) kick(ctx);
           if (!result.ok) {
             if (result.error === "message_too_long" || result.error === "too_long") { const e = await safetyOnlyReply(bodyCopy, "toolong"); if (e) return json(e, 200, origin); }
             return json({ error: "Message must be 1–1200 characters", code: result.error }, 400, origin);
           }
-          return json({
+          const responseBody = {
             reply: result.reply, conversationId: result.conversationId, urgent: result.urgent,
             leadStatus: result.leadStatus, persisted: result.persisted, degraded: { database: result.degraded.database, ai: result.degraded.ai },
-            mode: "development", notice: "Development build: mock AI only, not production-ready.",
-          }, 200, origin);
+            mode, notice: mode === "live-ai" ? "Live AI is enabled; the platform is not yet production-ready." : "Development build: mock AI only, not production-ready.",
+          };
+          if (dedupClaimed) {
+            const t = new Date(now()).toISOString();
+            await db.run("UPDATE chat_request_dedup SET status = 'completed', conversation_id = ?, response_json = ?, updated_at = ? WHERE business_id = ? AND request_key = ? AND status = 'processing'", [result.conversationId, JSON.stringify(responseBody), t, business.id, requestKey]);
+          }
+          return json(responseBody, 200, origin);
           } catch (e) {
             // Anything unexpected (limiter store, database, engine): a person describing an emergency still gets the safety guidance.
             // No private data is in that reply, so when the origin cannot be verified (the database may be the thing that failed) it is readable from any site.

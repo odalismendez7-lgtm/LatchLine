@@ -1,10 +1,18 @@
 # Test Cases and Results
 
-Last updated: 2026-11-21 (Stage 6 runtime validation)
+Last updated: 2026-11-27 (Step 5 authentication and tenant security)
 
 Run all tests: `npm test` (Node 22.5+, no network, no cost). The real-runtime files need the free local `wrangler` dev dependency (`npm install`); they skip with a visible reason without it.
 
 Rule: nothing is called production-ready unless the required checks below have passed and the result is recorded here with a date. "TODO" tests are required behavior that does not exist yet. They are expected to fail, are shown as failing, and are never counted as passing.
+
+## 2026-11-27: Step 3 structured service address
+
+GitHub Actions PR run: [45915682629](https://github.com/odalismendez7-lgtm/LatchLine/actions/runs/45915682629) — **1,272 passed, 0 failed**. This run included the Node test suite and real Playwright/Chromium widget browser tests. The PR remains a draft against `stage-6-runtime-validation`; nothing was merged or deployed.
+
+## 2026-11-27: Step 4 business dashboard and onboarding
+
+GitHub Actions PR run: [45917728636](https://github.com/odalismendez7-lgtm/LatchLine/actions/runs/45917728636) — **1,276 passed, 0 failed**. Coverage includes authorized site-key retrieval, HTTPS-only origin validation, duplicate registration, audited origin add/remove, public widget configuration allowed only for registered origins, role-based denial, the first-run checklist, and desktop/mobile browser tests for website setup and the embed snippet. This is local automated verification only; no hosted Worker, production domain, or real customer website has been connected.
 
 ## Required test categories
 
@@ -14,6 +22,7 @@ Rule: nothing is called production-ready unless the required checks below have p
 | Incorrect or missing information | Validation tests (96) and in-conversation rejections pass: bad phones, names, ZIPs, injection-like names. ZIP outside the verified list is stored "unconfirmed", never refused |
 | Emergency conversations | 164 safety tests pass (99 + 65 Stage 3: Spanish, water heater, generic emergency, negation fixes). Engine tests confirm safety replies work with the database down, the AI down, and the message cap reached |
 | Lead capture | Pass: saved only after transaction + readback; failures reported as NOT saved; retry after recovery saves once; fake-success database detected |
+| Structured service address | Pass: customer-supplied address parsed into street, unit, city, state; optional prompt/skip; no blocking when urgency, handoff, ZIP decline, or frustration takes priority; malformed and multiline input rejected; address hidden from roles without contact permission. No geocoding/USPS validation |
 | Failed notifications | Pass with the mock: provider outage, permanent error, malformed response, timeout, unknown exception, database failure before/after provider acceptance, crashed dispatcher (lease), retry/backoff, exhaustion to `failed` and `needsAttention`. Real providers untested (KI-24) |
 | Human handoff | Pass: phrase detection (positive and negative), honest "cannot connect live", handoff notification queued with the lead, repeated requests deduplicated, "NOT received" when it cannot be recorded, emergency priority carried. No live transfer exists |
 | AI service outages | Router tests plus engine tests: outage gives an honest fallback and a degraded flag; mock text hidden; unsafe AI replies replaced |
@@ -260,3 +269,7 @@ Limits of this run (what it does NOT show):
 ### 2026-11-16: Stage 1 baseline against the Stage 0 prototype (historical)
 
 12 passed, 0 unexpectedly failed, 7 TODO (all confirmed failing). The 7 gaps were: "I smell gas", CO detector, sewage backup, false "electrical" alarm, hours question, rate limiting, demo page not calling the backend. Five of these were fixed in Stage 2 (and are now ordinary tests); two remain TODO.
+
+## 2026-11-27: Step 5 authentication and tenant security
+
+GitHub Actions PR run: [45918958546](https://github.com/odalismendez7-lgtm/LatchLine/actions/runs/45918958546) — **1,279 passed, 0 failed**. New regression coverage verifies concurrent owner demotions/removals cannot leave a business ownerless, revoked/expired invitations cannot create memberships, and failed repeated invitation revocation is not audited as successful. The full suite also covers password hashing, sessions, CSRF, role authorization, tenant scoping, and cross-tenant HTTP access. No hosted D1 or real mail delivery was tested.

@@ -36,6 +36,27 @@ export function platformRepo(db) {
         return { id };
       });
     },
+    async widgetSettingsForBusiness(businessId) {
+      if (typeof businessId !== "string" || businessId.length < 2 || businessId.length > 80) return null;
+      return guard(async () => {
+        const b = await db.first("SELECT site_key, status FROM businesses WHERE id = ?", [businessId]);
+        if (!b) return null;
+        const rows = await db.all("SELECT origin FROM business_origins WHERE business_id = ? ORDER BY origin", [businessId]);
+        return { siteKey: b.site_key, status: b.status, origins: rows.map((r) => r.origin) };
+      });
+    },
+    async addBusinessOrigin(businessId, origin) {
+      return guard(async () => {
+        const r = await db.run("INSERT OR IGNORE INTO business_origins (business_id, origin) SELECT ?, ? WHERE EXISTS (SELECT 1 FROM businesses WHERE id = ? AND status = 'active')", [businessId, origin, businessId]);
+        return { added: r.changes === 1 };
+      });
+    },
+    async removeBusinessOrigin(businessId, origin) {
+      return guard(async () => {
+        const r = await db.run("DELETE FROM business_origins WHERE business_id = ? AND origin = ?", [businessId, origin]);
+        return { removed: r.changes === 1 };
+      });
+    },
     async isKnownOrigin(origin) {
       if (typeof origin !== "string" || origin.length > 200) return false;
       return guard(async () => !!(await db.first(
@@ -130,10 +151,11 @@ export function forBusiness(db, businessId) {
         const id = newId("led"), t = nowIso();
         await db.batch([
           {
-            sql: `INSERT INTO leads (id, business_id, conversation_id, name, phone, email, zip, issue_category, issue_text, urgency,
+            sql: `INSERT INTO leads (id, business_id, conversation_id, name, phone, email, zip, address_line1, address_line2, city, state, issue_category, issue_text, urgency,
                   preferred_contact, preferred_time, emergency, emergency_categories, zip_in_verified_area, summary, created_at, updated_at)
-                  VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+                  VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
             params: [id, B, conversationId, lead.name ?? null, lead.phone ?? null, lead.email ?? null, lead.zip ?? null,
+              lead.addressLine1 ?? null, lead.addressLine2 ?? null, lead.city ?? null, lead.state ?? null,
               lead.issueCategory ?? null, lead.issueText ?? null, lead.urgency ?? null, lead.preferredContact ?? null,
               lead.preferredTime ?? null, lead.emergency ? 1 : 0, json(lead.emergencyCategories ?? []),
               lead.zipInVerifiedArea ? "yes" : "unconfirmed", lead.summary ?? "", t, t],
@@ -142,8 +164,10 @@ export function forBusiness(db, businessId) {
           { sql: "INSERT INTO lead_events (id, business_id, lead_id, type, detail, created_at) VALUES (?,?,?,?,?,?)", params: [newId("evt"), B, id, "created", "{}", t] },
           audit("lead_created", id, { fields: Object.keys(lead) }),
         ]);
-        const back = await db.first("SELECT id, phone, email, name FROM leads WHERE id = ? AND business_id = ?", [id, B]);
-        if (!back || back.id !== id || (lead.phone ?? null) !== back.phone || (lead.email ?? null) !== back.email) {
+        const back = await db.first("SELECT id, phone, email, name, address_line1, address_line2, city, state FROM leads WHERE id = ? AND business_id = ?", [id, B]);
+        if (!back || back.id !== id || (lead.phone ?? null) !== back.phone || (lead.email ?? null) !== back.email
+          || (lead.addressLine1 ?? null) !== back.address_line1 || (lead.addressLine2 ?? null) !== back.address_line2
+          || (lead.city ?? null) !== back.city || (lead.state ?? null) !== back.state) {
           throw new DbError("not_persisted", "lead readback did not match what was written");
         }
         return { saved: true, id };
@@ -191,13 +215,14 @@ export function forBusiness(db, businessId) {
       // Text is stored well-formed (a lone UTF-16 half would be silently rewritten by the database and fail the read-back).
       patch = Object.fromEntries(Object.entries(patch).map(([k, v]) => [k, typeof v === "string" ? v.toWellFormed() : v]));
       // Defence in depth: the engine validates first, but this repository never trusts its caller's types or sizes.
-      const CAPS = { name: 100, phone: 20, email: 254, zip: 10, issueText: 2000, summary: 2000 };
+      const CAPS = { name: 100, phone: 20, email: 254, zip: 10, addressLine1: 160, addressLine2: 100, city: 100, state: 2, issueText: 2000, summary: 2000 };
       for (const [k, max] of Object.entries(CAPS)) {
         const v = patch[k];
         if (v !== undefined && v !== null && (typeof v !== "string" || v.length > max)) throw new DbError("invalid_data", `invalid ${k}`);
       }
-      for (const k of ["name", "phone", "email", "zip"]) if (typeof patch[k] === "string" && /[\u0000-\u001f\u007f]/.test(patch[k])) throw new DbError("invalid_data", `invalid ${k}`);
+      for (const k of ["name", "phone", "email", "zip", "addressLine1", "addressLine2", "city", "state"]) if (typeof patch[k] === "string" && /[\u0000-\u001f\u007f]/.test(patch[k])) throw new DbError("invalid_data", `invalid ${k}`);
       if (typeof patch.email === "string" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(patch.email)) throw new DbError("invalid_data", "invalid email");
+      if (patch.state !== undefined && patch.state !== null && !/^[A-Z]{2}$/.test(patch.state)) throw new DbError("invalid_data", "invalid state");
       if (patch.urgency !== undefined && patch.urgency !== null && !["now", "can_wait"].includes(patch.urgency)) throw new DbError("invalid_data", "invalid urgency");
       if (patch.emergencyCategories !== undefined && (!Array.isArray(patch.emergencyCategories) || patch.emergencyCategories.length > 20 || patch.emergencyCategories.some((c) => typeof c !== "string" || !/^[a-z][a-z0-9_]{0,59}$/.test(c)))) throw new DbError("invalid_data", "invalid emergencyCategories");
       return guard(async () => {
@@ -211,9 +236,9 @@ export function forBusiness(db, businessId) {
           const setCol = (col, val) => {
             if (val === cur[col]) return;
             sets.push(`${col} = ?`); params.push(val); changed.push(col); expect[col] = val;
-            if (["name", "phone", "email", "zip"].includes(col) && cur[col] != null) previous[col] = cur[col]; // an overwritten customer detail is never lost silently
+            if (["name", "phone", "email", "zip", "address_line1", "address_line2", "city", "state"].includes(col) && cur[col] != null) previous[col] = cur[col]; // an overwritten customer detail is never lost silently
           };
-          for (const col of ["name", "phone", "email", "zip", "urgency"]) if (patch[col] !== undefined) setCol(col, patch[col]);
+          for (const col of ["name", "phone", "email", "zip", "addressLine1", "addressLine2", "city", "state", "urgency"]) if (patch[col] !== undefined) setCol(({ addressLine1: "address_line1", addressLine2: "address_line2", city: "city", state: "state" })[col] ?? col, patch[col]);
           if (typeof patch.issueText === "string" && patch.issueText.trim()) setCol("issue_text", patch.issueText);
           if (typeof patch.summary === "string") setCol("summary", patch.summary);
           if ("zipInVerifiedArea" in patch) setCol("zip_in_verified_area", patch.zipInVerifiedArea ? "yes" : "unconfirmed");
@@ -255,7 +280,7 @@ export function forBusiness(db, businessId) {
 
     async list({ limit = 50 } = {}) {
       return guard(async () => (await db.all(
-        `SELECT id, name, phone, email, zip, issue_category, urgency, emergency, status, duplicate_count, created_at, ${CONTACT_MISSING} FROM leads WHERE business_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?`,
+        `SELECT id, name, phone, email, zip, address_line1, address_line2, city, state, issue_category, urgency, emergency, status, duplicate_count, created_at, ${CONTACT_MISSING} FROM leads WHERE business_id = ? ORDER BY created_at DESC, rowid DESC LIMIT ?`,
         [B, Math.min(Math.max(1, limit | 0), 200)])).map((r) => ({ ...r, contact_missing: !!r.contact_missing })));
     },
     async count() {
@@ -287,5 +312,45 @@ export function forBusiness(db, businessId) {
     return r ?? null;
   });
 
-  return Object.freeze({ businessId: B, profile, conversations: Object.freeze(conversations), leads: Object.freeze(leads), knowledge: Object.freeze(knowledge), notifications: notificationsRepo(db, B, leads), members: membersRepo(db, B), contactVerify: contactVerifyRepo(db, B), dashboard: dashboardRepo(db, B) });
+  // Entitlements and usage are always resolved through this tenant-bound handle.
+  const entitlements = Object.freeze({
+    async resolve(featureKey) {
+      if (typeof featureKey !== "string" || !/^[a-z][a-z0-9_.-]{0,99}$/.test(featureKey)) return { allowed: false, value: null, source: "invalid" };
+      return guard(async () => {
+        const row = await db.first(
+          "SELECT s.status, pe.value_json FROM business_subscriptions s LEFT JOIN plan_entitlements pe ON pe.plan_id = s.plan_id AND pe.feature_key = ? JOIN plans p ON p.id = s.plan_id AND p.active = 1 WHERE s.business_id = ?",
+          [featureKey, B]);
+        const override = await db.first("SELECT value_json FROM business_entitlement_overrides WHERE business_id = ? AND feature_key = ?", [B, featureKey]);
+        if (override) {
+          const value = parse(override.value_json, null);
+          return { allowed: value === true || (value && typeof value === "object" && value.enabled === true), value, source: "business_override" };
+        }
+        if (!row || !["trial", "active"].includes(row.status) || row.value_json == null) return { allowed: false, value: null, source: "default_deny" };
+        const value = parse(row.value_json, null);
+        return { allowed: value === true || (value && typeof value === "object" && value.enabled === true), value, source: "plan" };
+      });
+    },
+    async recordUsage(metricKey, periodStart, amount = 1) {
+      if (typeof metricKey !== "string" || !/^[a-z][a-z0-9_.-]{0,99}$/.test(metricKey)) throw new DbError("invalid_data", "invalid usage metric");
+      if (typeof periodStart !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(periodStart) || !Number.isFinite(Date.parse(periodStart + "T00:00:00.000Z")) || new Date(periodStart + "T00:00:00.000Z").toISOString().slice(0, 10) !== periodStart) throw new DbError("invalid_data", "invalid usage period");
+      if (!Number.isSafeInteger(amount) || amount < 1 || amount > 1000000) throw new DbError("invalid_data", "invalid usage amount");
+      return guard(async () => {
+        const t = nowIso();
+        await db.run("INSERT INTO usage_counters (business_id, metric_key, period_start, count, updated_at) VALUES (?,?,?,?,?) ON CONFLICT(business_id,metric_key,period_start) DO UPDATE SET count = usage_counters.count + excluded.count, updated_at = excluded.updated_at", [B, metricKey, periodStart, amount, t]);
+        const row = await db.first("SELECT count FROM usage_counters WHERE business_id = ? AND metric_key = ? AND period_start = ?", [B, metricKey, periodStart]);
+        if (!row) throw new DbError("not_persisted", "usage counter was not persisted");
+        return { metricKey, periodStart, count: row.count };
+      });
+    },
+    async usage(metricKey, periodStart) {
+      if (typeof metricKey !== "string" || !/^[a-z][a-z0-9_.-]{0,99}$/.test(metricKey)) throw new DbError("invalid_data", "invalid usage metric");
+      if (typeof periodStart !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(periodStart)) throw new DbError("invalid_data", "invalid usage period");
+      return guard(async () => {
+        const row = await db.first("SELECT count FROM usage_counters WHERE business_id = ? AND metric_key = ? AND period_start = ?", [B, metricKey, periodStart]);
+        return row?.count ?? 0;
+      });
+    },
+  });
+
+  return Object.freeze({ businessId: B, profile, conversations: Object.freeze(conversations), leads: Object.freeze(leads), knowledge: Object.freeze(knowledge), entitlements, notifications: notificationsRepo(db, B, leads), members: membersRepo(db, B), contactVerify: contactVerifyRepo(db, B), dashboard: dashboardRepo(db, B) });
 }

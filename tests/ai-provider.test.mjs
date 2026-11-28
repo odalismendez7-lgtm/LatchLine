@@ -63,7 +63,7 @@ describe("registry: paid providers stay disabled", () => {
   test("mock can be created", () => {
     assert.ok(createProvider({ type: "mock", id: "m" }));
   });
-  for (const type of ["anthropic", "openai", "google", "workers-ai"]) {
+  for (const type of ["anthropic", "google"]) {
     test(`${type} is refused with a 'disabled' error`, () => {
       assert.throws(
         () => createProvider({ type, id: "x", apiKey: "not-a-real-key" }),
@@ -71,6 +71,17 @@ describe("registry: paid providers stay disabled", () => {
       );
     });
   }
+  test("Workers AI provider requires the binding and an explicit model", () => {
+    assert.throws(() => createProvider({ type: "workers-ai" }), (e) => e.code === "disabled");
+    const provider = createProvider({ type: "workers-ai", ai: { run: async () => ({ choices: [{ message: { content: "ok" } }] }) }, model: "test-model" });
+    assert.equal(provider.id, "cloudflare-workers-ai");
+    assert.equal(provider.modelId, "test-model");
+  });
+  test("OpenAI provider can be constructed only with explicit server-side config", () => {
+    const provider = createProvider({ type: "openai", apiKey: "test-key", model: "test-model", fetchImpl: async () => new Response("{}") });
+    assert.equal(provider.id, "openai");
+    assert.equal(provider.modelId, "test-model");
+  });
   test("unknown provider type is refused", () => {
     assert.throws(() => createProvider({ type: "nope" }), (e) => e.code === "disabled");
   });

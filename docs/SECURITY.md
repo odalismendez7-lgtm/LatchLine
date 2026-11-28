@@ -1,6 +1,6 @@
 # Security Requirements
 
-Last updated: 2026-11-19 (Stage 6) · Status: REQUIREMENTS, partly implemented (see the table below). Not security-reviewed by anyone independent.
+Last updated: 2026-11-27 (Step 5 auth and tenant hardening) · Status: REQUIREMENTS, partly implemented (see the table below). Not security-reviewed by anyone independent.
 
 This repository may be **public**. Never commit secrets, customer data, real business data, or database exports.
 
@@ -21,6 +21,14 @@ This repository may be **public**. Never commit secrets, customer data, real bus
 | Customer privacy | Collect only needed fields; never request passwords or payment cards in chat; data retention/deletion policy defined | Policy + tests |
 | AI-specific | Customer text treated as untrusted data; model cannot access other tenants' data; model output cannot trigger privileged actions; response guard blocks invented facts/claims | Prompt-injection and leakage tests |
 
+## Step 5 authentication and tenant hardening
+
+- Production password hashing is fixed at PBKDF2-SHA256 with 600,000 iterations; weaker settings are refused unless tests explicitly opt into the unsafe fast hash.
+- Session tokens and one-time verification/reset/invitation tokens are stored as hashes. Session cookies are HttpOnly and SameSite=Strict; HTTPS uses the `__Host-` prefix and Secure. Mutating dashboard requests require same-origin Origin and a per-session CSRF token.
+- Invitation acceptance now creates membership only when the invitation's business-scoped, unexpired, unrevoked, unused state transition succeeds. The audit event is conditional on that transition.
+- Owner demotion/removal enforces the remaining-owner count inside the same atomic database batch as the mutation, preventing concurrent requests from removing the final owner. Failed role/invitation mutations are not recorded as successful audit events.
+- Automated race and repository tests pass. Remaining gates: real account email delivery is still mocked, PBKDF2 cost has not been measured in Workers, D1 has not been tested, and no independent security review has occurred.
+
 ## Implemented in Stage 3 (and what is still missing)
 
 | Area | Built and tested | Missing |
@@ -28,11 +36,11 @@ This repository may be **public**. Never commit secrets, customer data, real bus
 | Tenant isolation | Frozen per-business handles, `business_id` bound in every statement (SQL-spy test), composite foreign keys, cross-tenant read/write/merge tests, business chosen only by site key + registered origin | Never tested on real D1; no owner auth |
 | Database safety | Parameterized queries only; CHECK constraints; hostile-id tests; append-only audit log via triggers | No least-privilege roles (single binding); no encryption beyond the host's |
 | API protection | Per-client and per-business rate limits, 429 + Retry-After, 8 KB body limit, strict JSON checks, per-business CORS, no internals in errors, `no-store`/`nosniff` | IP-based limits only; origin is not authentication (KI-6); no bot protection |
-| Input validation | Message, phone, email, ZIP, name validators; text stored as inert data (render must escape; the demo page uses `textContent`) | Dashboard output escaping not built |
+| Input validation | Message, phone, email, ZIP, name, and structured street-address validators; multiline address payloads rejected; text stored as inert data (render must escape; the demo page uses `textContent`) | Dashboard output escaping not built |
 | AI-specific | Customer text only in user messages; guard rejects promises/prices/times/phones/links; mock text hidden | Never tested against a real model (KI-19) |
 | Audit | Business, lead, knowledge, contact, and notification events without customer values or addresses | Logins/permission failures (no auth) |
 | Notifications | Per-business outbox with composite foreign keys; only verified, enabled contacts used; text built only from that business's own lead; header/control-character stripping; idempotent; error codes only (no text) stored; real providers refused by the registry | Contact verification flow (KI-25); notification volume caps (KI-27); privacy review (KI-26); webhook signature checks (none exist yet) |
-| Privacy | Only needed fields collected; no passwords or cards requested | No retention/deletion policy, no encryption at app level, plain-text PII (KI-17) |
+| Privacy | Only needed fields collected; no passwords or cards requested; viewer role masks structured street address fields and common street-address patterns in lead free text and conversation messages | No retention/deletion policy, no encryption at app level, plain-text PII (KI-17) |
 
 ## Implemented in Stage 5 (DEMO authentication, not production-ready)
 

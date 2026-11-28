@@ -151,7 +151,7 @@ describe("chat endpoint as used by the widget: tenant scoping cannot be steered 
   test("site key of B from A's website is refused; and A's conversation id cannot be continued through B's key", async () => {
     const { chat, db } = await world();
     const a = await (await chat({ siteKey: KEY_A, message: "my sink is leaking" }, ORIGIN_A)).json();
-    assert.equal((await chat({ siteKey: KEY_B, message: "hello there" }, ORIGIN_A)).status, 403);
+    assert.equal((await chat({ siteKey: KEY_B, message: "hello there" }, ORIGIN_A)).status, 404, "wrong-origin and unknown-key requests share the same generic response");
     const b = await chat({ siteKey: KEY_B, message: "hello again", conversationId: a.conversationId }, ORIGIN_B);
     const bj = await b.json();
     assert.notEqual(bj.conversationId, a.conversationId, "a foreign conversation id starts a NEW conversation for B");

@@ -1,9 +1,19 @@
+describe("Stage 6 calendar retention boundary", () => {
+  test("subtracts a calendar year and clamps leap-day safely", () => {
+    assert.equal(retentionCutoff12Months(Date.parse("2026-11-28T12:00:00.000Z")), "2025-11-28T12:00:00.000Z");
+    assert.equal(retentionCutoff12Months(Date.parse("2025-02-28T12:00:00.000Z")), "2024-02-28T12:00:00.000Z");
+    assert.equal(retentionCutoff12Months(Date.parse("2024-02-29T12:00:00.000Z")), "2023-02-28T12:00:00.000Z");
+    assert.equal(retentionCutoff12Months(Date.parse("2025-03-31T12:00:00.000Z")), "2024-03-31T12:00:00.000Z");
+  });
+});
+
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { SqliteAdapter } from "../src/db/sqlite-adapter.js";
 import { migrate } from "../src/db/migrate-node.js";
 import { platformRepo, forBusiness } from "../src/db/tenant.js";
 import { createApp } from "../src/app.js";
+import { retentionCutoff12Months } from "../src/util/retention.js";
 import { MemoryStore, DbStore } from "../src/ratelimit/limiter.js";
 import { AIRouter } from "../src/ai/router.js";
 import { MockProvider } from "../src/ai/mock.js";
@@ -24,10 +34,10 @@ async function setup(appOpts = {}) {
   const app = createApp({ db, store: new MemoryStore(), salt: "test-salt-123", router: new AIRouter({ providers: [new MockProvider()], retries: 0 }), ...appOpts });
   return { db, app };
 }
-const post = (app, body, { origin = A_ORIGIN, ip = "203.0.113.5", raw } = {}) =>
+const post = (app, body, { origin = A_ORIGIN, ip = "203.0.113.5", raw, idempotencyKey } = {}) =>
   app.fetch(new Request("https://api.test/api/chat", {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...(origin ? { Origin: origin } : {}), "CF-Connecting-IP": ip },
+    headers: { "Content-Type": "application/json", ...(origin ? { Origin: origin } : {}), "CF-Connecting-IP": ip, ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}) },
     body: raw ?? JSON.stringify(body),
   }));
 
@@ -47,21 +57,25 @@ describe("site key and origin", () => {
       assert.equal(res.status, 404, JSON.stringify(siteKey));
     }
   });
-  test("business A's key from business B's origin is refused", async () => {
+  test("business A's key from business B's origin gets the same generic response as an unknown key", async () => {
     const { app, db } = await setup();
     const res = await post(app, { message: "my sink is leaking badly here", siteKey: KEY_A }, { origin: B_ORIGIN });
-    assert.equal(res.status, 403);
+    assert.equal(res.status, 404);
+    assert.deepEqual(await res.json(), { error: "Chat unavailable" });
+    const unknown = await post(app, { message: "hi", siteKey: "sk_unknown_00000000" }, { origin: A_ORIGIN });
+    assert.equal(unknown.status, res.status);
+    assert.deepEqual(await unknown.json(), { error: "Chat unavailable" });
     assert.equal(res.headers.get("Access-Control-Allow-Origin"), "null");
     assert.equal((await db.first("SELECT COUNT(*) n FROM conversations")).n, 0);
   });
   test("no Origin header (non-browser caller) is refused", async () => {
     const { app } = await setup();
-    assert.equal((await post(app, { message: "hi", siteKey: KEY_A }, { origin: "" })).status, 403);
+    assert.equal((await post(app, { message: "hi", siteKey: KEY_A }, { origin: "" })).status, 404);
   });
   test("a suspended business is refused", async () => {
     const { app, db } = await setup();
     await db.run("UPDATE businesses SET status = 'suspended' WHERE id = 'acme-plumbing'");
-    assert.equal((await post(app, { message: "hi", siteKey: KEY_A })).status, 403);
+    assert.equal((await post(app, { message: "hi", siteKey: KEY_A })).status, 404);
   });
   test("business id in the body is ignored; the site key decides", async () => {
     const { app, db } = await setup();
@@ -205,6 +219,7 @@ describe("CORS", () => {
     const ok = await app.fetch(new Request("https://api.test/api/chat", { method: "OPTIONS", headers: { Origin: A_ORIGIN } }));
     assert.equal(ok.status, 204);
     assert.equal(ok.headers.get("Access-Control-Allow-Origin"), A_ORIGIN);
+    assert.match(ok.headers.get("Access-Control-Allow-Headers") || "", /Idempotency-Key/i);
     const bad = await app.fetch(new Request("https://api.test/api/chat", { method: "OPTIONS", headers: { Origin: "https://evil.example" } }));
     assert.equal(bad.status, 403);
     assert.equal(bad.headers.get("Access-Control-Allow-Origin"), null);
@@ -214,6 +229,7 @@ describe("CORS", () => {
     const res = await post(app, { message: "hi", siteKey: KEY_A });
     assert.equal(res.headers.get("Cache-Control"), "no-store");
     assert.equal(res.headers.get("X-Content-Type-Options"), "nosniff");
+    assert.match(res.headers.get("Access-Control-Allow-Headers") || "", /Idempotency-Key/i);
   });
 });
 
@@ -231,5 +247,54 @@ describe("end-to-end through HTTP handler", () => {
     assert.equal(last.persisted, true);
     const row = await db.first("SELECT name, phone, zip FROM leads");
     assert.deepEqual({ ...row }, { name: "Jane Doe", phone: "+15125550142", zip: "62701" });
+  });
+});
+
+describe("chat request idempotency", () => {
+  test("completed retries replay the original response without creating another conversation", async () => {
+    const { app, db } = await setup();
+    const body = { message: "my kitchen faucet keeps dripping", siteKey: KEY_A };
+    const first = await post(app, body, { idempotencyKey: "retry-key-0001" });
+    assert.equal(first.status, 200);
+    const original = await first.json();
+    const retry = await post(app, body, { idempotencyKey: "retry-key-0001" });
+    assert.equal(retry.status, 200);
+    assert.deepEqual(await retry.json(), original);
+    assert.equal((await db.first("SELECT COUNT(*) n FROM conversations")).n, 1);
+    assert.equal((await db.first("SELECT COUNT(*) n FROM chat_request_dedup")).n, 1);
+  });
+  test("a key cannot replay a response for different message content", async () => {
+    const { app, db } = await setup();
+    const key = "same-key-different-payload";
+    const first = await post(app, { message: "my kitchen faucet keeps dripping", siteKey: KEY_A }, { idempotencyKey: key });
+    assert.equal(first.status, 200);
+    const changed = await post(app, { message: "my toilet is overflowing", siteKey: KEY_A }, { idempotencyKey: key });
+    assert.equal(changed.status, 409);
+    assert.equal((await changed.json()).code, "idempotency_key_conflict");
+    assert.equal((await db.first("SELECT COUNT(*) n FROM conversations")).n, 1);
+  });
+  test("keys are tenant-scoped", async () => {
+    const { app, db } = await setup();
+    await post(app, { message: "my sink is leaking", siteKey: KEY_A }, { idempotencyKey: "tenant-key-0001" });
+    await post(app, { message: "my sink is leaking", siteKey: KEY_B }, { origin: B_ORIGIN, idempotencyKey: "tenant-key-0001" });
+    assert.equal((await db.first("SELECT COUNT(*) n FROM chat_request_dedup")).n, 2);
+    assert.equal((await db.first("SELECT COUNT(*) n FROM conversations")).n, 2);
+  });
+  test("invalid message does not reserve an idempotency key", async () => {
+    const { app, db } = await setup();
+    const key = "retry-after-validation-01";
+    const invalid = await post(app, { message: "   ", siteKey: KEY_A }, { idempotencyKey: key });
+    assert.equal(invalid.status, 400);
+    assert.equal((await db.first("SELECT COUNT(*) n FROM chat_request_dedup")).n, 0);
+    const corrected = await post(app, { message: "what are your hours?", siteKey: KEY_A }, { idempotencyKey: key });
+    assert.equal(corrected.status, 200);
+    assert.equal((await db.first("SELECT status FROM chat_request_dedup WHERE request_key = ?", [key])).status, "completed");
+  });
+  test("malformed idempotency keys are rejected", async () => {
+    const { app } = await setup();
+    for (const key of ["short", "contains spaces!", "x".repeat(129)]) {
+      const res = await post(app, { message: "hi", siteKey: KEY_A }, { idempotencyKey: key });
+      assert.equal(res.status, 400);
+    }
   });
 });

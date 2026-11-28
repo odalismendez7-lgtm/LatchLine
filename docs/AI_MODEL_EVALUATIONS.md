@@ -1,6 +1,6 @@
 # AI Model Evaluations
 
-Last updated: 2026-11-17 · Status: **Provider research done (pricing, privacy). NO model has been tested. No provider is connected. No paid API is active.**
+Last updated: 2026-11-17 · Status: **Provider research is historical; an opt-in OpenAI Responses adapter and mocked adapter tests now exist. No real model has been tested, no API account is connected, and no paid API is active.**
 
 This is the permanent record of which models and providers were looked at, how, and what was decided. Do not add a number that was not measured or sourced.
 
@@ -88,3 +88,18 @@ Still to be set by the founder and engineering before the first run. **TBD.**
 
 - The provider interface, mock provider, and router are built and tested (`src/ai/`). The mock is clearly labeled and is not an AI model.
 - Real providers (`anthropic`, `openai`, `google`, `workers-ai`) are **deliberately refused** by `src/ai/registry.js` until the founder approves; a test enforces this.
+
+
+## Implementation update (2026-11-26)
+
+An opt-in OpenAI Responses API adapter now exists at `src/ai/openai.js`. Its HTTP behavior is tested with mocked responses only. It has **not** been called against OpenAI, and these tests do not measure model quality, latency, cost, or safety.
+
+Initial low-cost evaluation candidate: `gpt-6-luna` (current model ID listed in OpenAI's official model documentation on 2026-11-26). This is a candidate, not a winner. Verify current prices and API access immediately before enabling it. See `docs/OPENAI_SETUP.md`.
+
+Required before any real customer data:
+- Synthetic conversation evaluation across normal, ambiguous, adversarial, multilingual and emergency-adjacent scenarios.
+- Compare model output against the deterministic response guard and verify that the model cannot override safety or assert actions that the system did not complete.
+- Measure actual input/output tokens, latency, timeouts, refusals and estimated cost.
+- Review OpenAI's current API data controls, retention, terms and customer disclosure.
+- Keep the mock as a rollback path and disable live AI automatically on configuration failure.
+\n\n## Cloudflare Workers AI candidate (2026-11-26)\n\nAn opt-in Cloudflare Workers AI binding adapter now exists at `src/ai/workers-ai.js`. Initial evaluation candidate: `@cf/google/gemma-4-26b-a4b-it`. Cloudflare currently lists a 10,000-Neuron daily free allocation on Workers Free; usage beyond that requires Workers Paid and may incur charges. The adapter tests use a mocked binding only. No real inference, quality evaluation, or customer-data processing has occurred. See `WORKERS_AI_SETUP.md`.\n

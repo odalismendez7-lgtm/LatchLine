@@ -8,9 +8,28 @@ import { MockMailer } from "../src/auth/mailer.js";
 import { MockNotifier } from "../src/notify/mock.js";
 import { dispatchDue } from "../src/notify/dispatcher.js";
 import { createApp } from "../src/app.js";
+import { maskLead, maskMessages } from "../src/dashboard/authz.js";
 
 const ORIGIN = "http://localhost";
 const PW = "correct horse battery staple";
+
+test("property addresses are hidden from viewers in structured fields and free text", () => {
+  const lead = {
+    address_line1: "123 Main St", address_line2: "Apt 4", city: "Bronx", state: "NY", zip: "10467",
+    issue_text: "Kitchen faucet leaking at 123 Main St, Apt 4, Bronx, NY 10467",
+    summary: "123 Main St, Apt 4, Bronx, NY 10467: kitchen faucet leaking",
+  };
+  const viewer = maskLead(lead, "viewer");
+  for (const field of ["address_line1", "address_line2", "city", "state"]) assert.equal(viewer[field], "[hidden]");
+  assert.equal(viewer.zip, "10467");
+  assert.doesNotMatch(viewer.issue_text, /123 Main|Bronx|Apt 4/i);
+  assert.doesNotMatch(viewer.summary, /123 Main|Bronx|Apt 4/i);
+  const owner = maskLead(lead, "owner");
+  assert.equal(owner.address_line1, "123 Main St");
+  assert.match(owner.issue_text, /123 Main St/);
+  const messages = maskMessages([{ role: "customer", content: "Please come to 55 West 42nd Avenue, New York, NY 10036." }], "viewer");
+  assert.doesNotMatch(messages[0].content, /55 West 42nd|New York/i);
+});
 
 export async function makeWorld({ devMode = false } = {}) {
   const db = new SqliteAdapter(":memory:"); migrate(db);
@@ -56,6 +75,43 @@ export async function makeWorld({ devMode = false } = {}) {
   }
   return { db, mailer, app, call, signup, login, api, seedLead };
 }
+
+describe("website widget onboarding", () => {
+  test("owner can read the public site key and manage only that business's HTTPS origins", async () => {
+    const w = await makeWorld(); const u = await w.signup("widget-owner@acme.example"); const A = w.api(u);
+    const initial = await A.get("/widget");
+    assert.equal(initial.status, 200);
+    assert.match(initial.data.siteKey, /^sk_[A-Za-z0-9_-]{20,}$/);
+    assert.deepEqual(initial.data.origins, []);
+    assert.equal((await A.send("POST", "/widget/origins", { origin: "https://example.com/path" })).status, 400);
+    assert.equal((await A.send("POST", "/widget/origins", { origin: "http://example.com" })).status, 400);
+    assert.equal((await A.send("POST", "/widget/origins", { origin: "https://user:pass@example.com" })).status, 400);
+    const added = await A.send("POST", "/widget/origins", { origin: "https://www.example.com/" });
+    assert.equal(added.status, 201);
+    assert.deepEqual(added.data.origins, ["https://www.example.com"]);
+    const publicConfig = await w.app.fetch(new Request("https://latchline.example/api/widget/config?siteKey=" + encodeURIComponent(initial.data.siteKey), { headers: { Origin: "https://www.example.com" } }));
+    assert.equal(publicConfig.status, 200);
+    assert.equal(publicConfig.headers.get("Access-Control-Allow-Origin"), "https://www.example.com");
+    const duplicate = await A.send("POST", "/widget/origins", { origin: "https://www.example.com" });
+    assert.equal(duplicate.status, 200);
+    assert.equal(duplicate.data.added, false);
+    const removed = await A.send("DELETE", "/widget/origins?origin=" + encodeURIComponent("https://www.example.com"));
+    assert.equal(removed.status, 200);
+    assert.deepEqual(removed.data.origins, []);
+    assert.equal((await A.send("DELETE", "/widget/origins?origin=" + encodeURIComponent("https://www.example.com"))).status, 404);
+    const deniedConfig = await w.app.fetch(new Request("https://latchline.example/api/widget/config?siteKey=" + encodeURIComponent(initial.data.siteKey), { headers: { Origin: "https://www.example.com" } }));
+    assert.equal(deniedConfig.status, 404);
+    const events = (await A.get("/audit")).data.events;
+    assert.ok(events.some((e) => e.action === "website_origin_added" && e.detail.origin === "https://www.example.com"));
+    assert.ok(events.some((e) => e.action === "website_origin_removed" && e.detail.origin === "https://www.example.com"));
+  });
+  test("website widget configuration is not exposed to roles without settings permission", async () => {
+    const w = await makeWorld(); const u = await w.signup("widget-viewer@acme.example");
+    await w.db.run("UPDATE memberships SET role = 'viewer' WHERE business_id = ?", [u.bizId]);
+    assert.equal((await w.api(u).get("/widget")).status, 403);
+    assert.equal((await w.api(u).send("POST", "/widget/origins", { origin: "https://example.com" })).status, 403);
+  });
+});
 
 describe("authentication over HTTP", () => {
   test("login sets an HttpOnly SameSite=Strict cookie and never puts the token in the body", async () => {
@@ -561,4 +617,46 @@ describe("Stage 5 repositories are tenant-scoped (SQL spy)", () => {
       assert.ok(!/\$\{/.test(s.sql));
     }
   });
+});
+
+
+describe("Stage 6 deletion behavior", () => {
+  test("deleting a lead removes its conversation, messages, lead events and notifications but keeps a minimal audit record", async () => {
+    const w = await makeWorld();
+    const u = await w.signup("privacy@acme.example");
+    const { leadId } = await w.seedLead(u.bizId);
+    const lead = await w.db.first("SELECT conversation_id FROM leads WHERE id = ? AND business_id = ?", [leadId, u.bizId]);
+    assert.ok(lead);
+    const conversationId = lead.conversation_id;
+    // Seed a message and a lead event so cascade behavior is checked, not assumed.
+    await w.db.run("INSERT INTO messages (id, business_id, conversation_id, role, content, created_at) VALUES (?,?,?,?,?,?)", ["privacy-msg", u.bizId, conversationId, "customer", "Private customer text", new Date().toISOString()]);
+    await w.db.run("INSERT INTO lead_events (id, business_id, lead_id, type, detail, created_at) VALUES (?,?,?,?,?,?)", ["privacy-evt", u.bizId, leadId, "updated", JSON.stringify({ fields: ["phone"] }), new Date().toISOString()]);
+    await w.db.run("INSERT INTO notifications (id, business_id, lead_id, kind, variant, priority, priority_rank, channel, idempotency_key, status, attempts, max_attempts, simulated, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", ["privacy-notif", u.bizId, leadId, "new_lead", null, "normal", 2, "email", "privacy-test-key", "queued", 0, 3, 1, new Date().toISOString(), new Date().toISOString()]);
+    await w.db.run("INSERT INTO notification_attempts (id, business_id, notification_id, attempt_no, started_at, finished_at, outcome, error_code) VALUES (?,?,?,?,?,?,?,?)", ["privacy-attempt", u.bizId, "privacy-notif", 1, new Date().toISOString(), new Date().toISOString(), "accepted", null]);
+    const user = await w.db.first("SELECT id FROM users WHERE email = ?", ["privacy@acme.example"]);
+    assert.ok(user?.id, "test user must exist");
+    const T = forBusiness(w.db, u.bizId);
+    await T.dashboard.deleteLead(user.id, leadId);
+    for (const [table, column, value] of [["leads","id",leadId],["conversations","id",conversationId],["messages","id","privacy-msg"],["lead_events","id","privacy-evt"],["notifications","id","privacy-notif"],["notification_attempts","id","privacy-attempt"]]) {
+      const row = await w.db.first(`SELECT 1 AS found FROM ${table} WHERE ${column} = ? AND business_id = ?`, [value, u.bizId]);
+      assert.equal(row, null, `${table} should be removed`);
+    }
+    const audit = await w.db.first("SELECT action, target, detail FROM audit_log WHERE business_id = ? AND action = 'lead_deleted' ORDER BY created_at DESC LIMIT 1", [u.bizId]);
+    assert.ok(audit);
+    assert.equal(audit.target, leadId);
+    assert.doesNotMatch(audit.detail, /Private customer text|@|\\+1/);
+    await assert.rejects(() => T.dashboard.deleteLead(u.userId, leadId), (e) => e.code === "not_found");
+  });
+});
+
+
+test("lead deletion is tenant-scoped and cannot erase another business's lead", async () => {
+  const w = await makeWorld();
+  const a = await w.signup("tenant-delete-a@acme.example", "Business A");
+  const b = await w.signup("tenant-delete-b@acme.example", "Business B");
+  const { leadId } = await w.seedLead(b.bizId);
+  const TA = forBusiness(w.db, a.bizId);
+  await assert.rejects(() => TA.dashboard.deleteLead("actor-a", leadId), (e) => e.code === "not_found");
+  const row = await w.db.first("SELECT id FROM leads WHERE id = ? AND business_id = ?", [leadId, b.bizId]);
+  assert.ok(row, "lead belonging to business B must remain intact");
 });

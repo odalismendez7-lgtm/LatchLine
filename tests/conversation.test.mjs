@@ -28,6 +28,29 @@ describe("context and memory inside one conversation", () => {
     const lead = await w.A.leads.get((await w.A.conversations.get(c.id)).leadId);
     assert.deepEqual([lead.name, lead.phone, lead.zip, lead.urgency], ["Dana Cruz", "+15125550142", "62701", "can_wait"]);
   });
+  test("captures and persists an optional structured service address", async () => {
+    const w = await world();
+    const c = chat(w.deps());
+    await c.say(ISSUE);
+    await c.say("Jane Doe");
+    await c.say("512-555-0142");
+    await c.say("10458");
+    const addressPrompt = await c.say("123 Main Street, Apt 4B, Bronx, NY 10458");
+    assert.match(addressPrompt.reply, /urgent|happening right now|can it wait/i);
+    const done = await c.say("it can wait");
+    assert.equal(done.leadStatus, "saved");
+    const lead = await w.A.leads.get((await w.A.conversations.get(c.id)).leadId);
+    assert.deepEqual(
+      [lead.address_line1, lead.address_line2, lead.city, lead.state],
+      ["123 Main Street", "Apt 4B", "Bronx", "NY"],
+    );
+  });
+  test("lets a customer skip the optional service address without blocking the lead", async () => {
+    const w = await world();
+    const c = chat(w.deps());
+    for (const message of [ISSUE, "Jane Doe", "512-555-0142", "10458", "skip", "it can wait"]) await c.say(message);
+    assert.equal((await w.A.leads.get((await w.A.conversations.get(c.id)).leadId)).address_line1, null);
+  });
   test("'I already told you' gets what the assistant holds, not the same question again", async () => {
     const w = await world();
     const c = await script(w.deps(), [ISSUE, "Jane Doe"]);

@@ -22,7 +22,7 @@ const lead = (o = {}) => ({ name: "Jane Doe", phone: "+15125550142", email: "jan
 describe("migrations", () => {
   test("apply once and are idempotent", () => {
     const db = new SqliteAdapter(":memory:");
-    assert.deepEqual(migrate(db), ["0001_init.sql", "0002_notifications.sql", "0003_accounts.sql", "0004_simulated_mail.sql", "0005_notification_variant.sql"]);
+    assert.deepEqual(migrate(db), ["0001_init.sql", "0002_notifications.sql", "0003_accounts.sql", "0004_simulated_mail.sql", "0005_notification_variant.sql", "0006_chat_request_dedup.sql", "0007_chat_request_payload_hash.sql", "0008_structured_service_address.sql", "0009_stage7_entitlements.sql"]);
     assert.deepEqual(migrate(db), []);
   });
 });
@@ -211,6 +211,97 @@ describe("every tenant statement is scoped (SQL spy)", () => {
     assert.equal(await A.conversations.get(evil), null);
     assert.equal(await A.leads.get(evil), null);
     assert.deepEqual(await A.conversations.messages(evil), []);
+  });
+});
+
+describe("tenant entitlements and usage", () => {
+  test("unknown features default deny and plan values resolve only for the assigned tenant", async () => {
+    const db = fresh(); const { A, B } = await seed(db);
+    assert.deepEqual(await A.entitlements.resolve("chat.enabled"), { allowed: false, value: null, source: "default_deny" });
+    await db.run("INSERT INTO plans (id,name,created_at) VALUES ('basic','Basic','2026-01-01')");
+    await db.run("INSERT INTO plan_entitlements (plan_id,feature_key,value_json) VALUES ('basic','chat.enabled','true')");
+    await db.run("INSERT INTO business_subscriptions (business_id,plan_id,status,updated_at) VALUES ('acme-plumbing','basic','active','2026-01-01')");
+    assert.deepEqual(await A.entitlements.resolve("chat.enabled"), { allowed: true, value: true, source: "plan" });
+    assert.deepEqual(await B.entitlements.resolve("chat.enabled"), { allowed: false, value: null, source: "default_deny" });
+    assert.equal((await A.entitlements.resolve("unknown.feature")).allowed, false);
+  });
+  test("business override takes precedence and cancelled subscriptions do not grant plan access", async () => {
+    const db = fresh(); const { A } = await seed(db);
+    await db.run("INSERT INTO plans (id,name,created_at) VALUES ('basic','Basic','2026-01-01')");
+    await db.run("INSERT INTO plan_entitlements (plan_id,feature_key,value_json) VALUES ('basic','reports.export','true')");
+    await db.run("INSERT INTO business_subscriptions (business_id,plan_id,status,updated_at) VALUES ('acme-plumbing','basic','cancelled','2026-01-01')");
+    assert.equal((await A.entitlements.resolve("reports.export")).allowed, false);
+    await db.run("INSERT INTO business_entitlement_overrides (business_id,feature_key,value_json,updated_at) VALUES ('acme-plumbing','reports.export','true','2026-01-02')");
+    assert.equal((await A.entitlements.resolve("reports.export")).allowed, true);
+  });
+  test("usage increments atomically by tenant and period; invalid input is rejected", async () => {
+    const { A, B } = await seed(fresh());
+    const results = await Promise.all(Array.from({ length: 10 }, () => A.entitlements.recordUsage("messages", "2026-11-01")));
+    assert.equal(results.at(-1).count, 10);
+    assert.equal(await A.entitlements.usage("messages", "2026-11-01"), 10);
+    assert.equal(await B.entitlements.usage("messages", "2026-11-01"), 0);
+    assert.equal(await A.entitlements.usage("messages", "2026-12-01"), 0);
+    await assert.rejects(A.entitlements.recordUsage("../messages", "2026-11-01"), (e) => e.code === "invalid_data");
+    await assert.rejects(A.entitlements.recordUsage("messages", "not-a-date"), (e) => e.code === "invalid_data");
+  });
+});
+
+describe("tenant analytics", () => {
+  test("returns only this tenant's real lead counts and owner-entered outcomes", async () => {
+    const db = fresh(); const { A, B } = await seed(db);
+    const ca = await A.conversations.create();
+    const first = await A.leads.create(ca.id, lead({ issueCategory: "leak" }));
+    const cb = await A.conversations.create();
+    const second = await A.leads.create(cb.id, lead({ phone: "+15125550143", email: "b@example.com", issueCategory: "drain" }));
+    const other = await B.conversations.create();
+    await B.leads.create(other.id, lead({ phone: "+15125550199", email: "other@example.com" }));
+    await db.run("UPDATE leads SET created_at = '2026-11-10T12:00:00.000Z', status = 'won' WHERE id = ?", [first.id]);
+    await db.run("UPDATE leads SET created_at = '2026-11-11T12:00:00.000Z', status = 'new' WHERE id = ?", [second.id]);
+    const result = await A.dashboard.analytics({ from: "2026-11-01", to: "2026-11-30" });
+    assert.equal(result.sampleSize, 2);
+    assert.deepEqual(result.outcomes, { won: 1, lost: 0, sampleSize: 1 });
+    assert.deepEqual(result.daily, [{ date: "2026-11-10", leads: 1 }, { date: "2026-11-11", leads: 1 }]);
+    assert.deepEqual(result.categories.map((x) => x.category), ["drain", "leak"]);
+    assert.equal((await B.dashboard.analytics({ from: "2026-11-01", to: "2026-11-30" })).sampleSize, 1);
+    assert.match(result.methodology, /no revenue or job value is inferred/i);
+  });
+  test("rejects impossible, reversed, and oversized date ranges", async () => {
+    const { A } = await seed(fresh());
+    for (const range of [
+      { from: "2026-02-30", to: "2026-03-01" },
+      { from: "2026-11-02", to: "2026-11-01" },
+      { from: "2025-01-01", to: "2026-01-02" },
+      { from: "2026-01-01", to: "2026-01-02T00:00:00Z" },
+    ]) await assert.rejects(A.dashboard.analytics(range), (e) => e.code === "invalid_data");
+  });
+});
+
+describe("Stage 6 retention deletion atomicity", () => {
+  test("does not delete conversations without a reliable customer activity timestamp", async () => {
+    const db = fresh();
+    const { A } = await seed(db);
+    const conv = await A.conversations.create();
+    await db.run("UPDATE conversations SET created_at = ? WHERE id = ?", ["2020-01-01T00:00:00.000Z", conv.id]);
+    const result = await A.dashboard.expireCustomerData("system_retention", "2025-01-01T00:00:00.000Z");
+    assert.equal(result.deleted, 0);
+    assert.ok(await db.first("SELECT id FROM conversations WHERE id = ?", [conv.id]));
+  });
+  test("conversation deletion and audit entry are one batch", async () => {
+    const db = fresh();
+    const { A } = await seed(db);
+    const conv = await A.conversations.create();
+    await db.run("UPDATE conversations SET created_at = ? WHERE id = ?", ["2024-01-01T00:00:00.000Z", conv.id]);
+    await db.run("INSERT INTO messages (id,business_id,conversation_id,role,content,created_at) VALUES (?,?,?,?,?,?)", ["retention-customer-msg", "acme-plumbing", conv.id, "customer", "hello", "2024-01-01T00:00:00.000Z"]);
+    const originalBatch = db.batch.bind(db);
+    db.batch = async () => { throw new Error("injected failure"); };
+    await assert.rejects(A.dashboard.expireCustomerData("system_retention", "2025-01-01T00:00:00.000Z"), /injected failure/);
+    assert.ok(await db.first("SELECT id FROM conversations WHERE id = ?", [conv.id]));
+    assert.equal((await db.first("SELECT COUNT(*) n FROM audit_log WHERE action='retention_expired'")).n, 0);
+    db.batch = originalBatch;
+    const result = await A.dashboard.expireCustomerData("system_retention", "2025-01-01T00:00:00.000Z");
+    assert.equal(result.deleted, 1);
+    assert.equal(await db.first("SELECT id FROM conversations WHERE id = ?", [conv.id]), null);
+    assert.equal((await db.first("SELECT COUNT(*) n FROM audit_log WHERE action='retention_expired'")).n, 1);
   });
 });
 

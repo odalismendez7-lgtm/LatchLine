@@ -12,7 +12,7 @@ export function dashboardRepo(db, B) {
     sql: "INSERT INTO audit_log (id, business_id, actor, action, target, detail, created_at) VALUES (?,?,?,?,?,?,?)",
     params: [newId("aud"), B, actor, action, target ?? null, json(detail), nowIso()],
   });
-  const leadCols = `id, name, phone, email, zip, issue_category, issue_text, urgency, preferred_contact, preferred_time, emergency, status, duplicate_count, zip_in_verified_area, summary, created_at, updated_at, ${CONTACT_MISSING}`;
+  const leadCols = `id, name, phone, email, zip, address_line1, address_line2, city, state, issue_category, issue_text, urgency, preferred_contact, preferred_time, emergency, status, duplicate_count, zip_in_verified_area, summary, created_at, updated_at, ${CONTACT_MISSING}`;
 
   return Object.freeze({
     async overview() {
@@ -41,7 +41,7 @@ export function dashboardRepo(db, B) {
             // letters) lets them confirm or rebuild a hidden value piece by piece through the result count, so they
             // can search name and ZIP only.
             where.push("(name LIKE ? ESCAPE '\\' OR zip LIKE ? ESCAPE '\\')"); p.push(l, l);
-          } else { where.push("(name LIKE ? ESCAPE '\\' OR issue_text LIKE ? ESCAPE '\\' OR zip LIKE ? ESCAPE '\\')"); p.push(l, l, l); }
+          } else { where.push("(name LIKE ? ESCAPE '\\' OR issue_text LIKE ? ESCAPE '\\' OR zip LIKE ? ESCAPE '\\' OR address_line1 LIKE ? ESCAPE '\\' OR city LIKE ? ESCAPE '\\')"); p.push(l, l, l, l, l); }
         }
         const lim = clamp(limit, 1, 100, 25), off = clamp(offset, 0, 100000, 0);
         const rows = await db.all(`SELECT ${leadCols} FROM leads WHERE ${where.join(" AND ")} ORDER BY emergency DESC, created_at DESC, rowid DESC LIMIT ? OFFSET ?`, [...p, lim, off]);
@@ -121,10 +121,72 @@ export function dashboardRepo(db, B) {
     async handoffs(limit = 50) {
       return guard(async () => {
         const rows = await db.all(
-          `SELECT c.id AS conversation_id, c.lead_id, c.urgent, c.updated_at, l.name, l.phone, l.email, l.issue_text, l.status AS lead_status
+          `SELECT c.id AS conversation_id, c.lead_id, c.urgent, c.updated_at, l.name, l.phone, l.email, l.address_line1, l.address_line2, l.city, l.state, l.zip, l.issue_text, l.status AS lead_status
              FROM conversations c LEFT JOIN leads l ON l.id = c.lead_id AND l.business_id = c.business_id
             WHERE c.business_id = ? AND c.status = 'needs_human' ORDER BY c.urgent DESC, c.updated_at DESC LIMIT ?`, [B, clamp(limit, 1, 100, 50)]);
         return rows.map((r) => ({ ...r, urgent: !!r.urgent }));
+      });
+    },
+    async exportPrivacyBundle() {
+      return guard(async () => {
+        const leads = await db.all("SELECT * FROM leads WHERE business_id = ? ORDER BY created_at", [B]);
+        const conversations = await db.all("SELECT id, status, state, urgent, lead_id, message_count, created_at, updated_at FROM conversations WHERE business_id = ? ORDER BY created_at", [B]);
+        const messages = await db.all("SELECT id, conversation_id, role, content, meta, created_at FROM messages WHERE business_id = ? ORDER BY created_at", [B]);
+        const events = await db.all("SELECT id, lead_id, type, detail, created_at FROM lead_events WHERE business_id = ? ORDER BY created_at", [B]);
+        const notifications = await db.all("SELECT id, lead_id, kind, priority, channel, recipient, status, attempts, created_at, updated_at FROM notifications WHERE business_id = ? ORDER BY created_at", [B]);
+        return { leads, conversations, messages, events, notifications };
+      });
+    },
+    async expireCustomerData(actorId, cutoffIso, limit = 100) {
+      return guard(async () => {
+        const safeLimit = clamp(limit, 1, 250, 100);
+        const ids = await db.all(`SELECT c.id FROM conversations c WHERE c.business_id = ? AND (SELECT MAX(m.created_at) FROM messages m WHERE m.business_id = c.business_id AND m.conversation_id = c.id AND m.role = 'customer') IS NOT NULL AND (SELECT MAX(m.created_at) FROM messages m WHERE m.business_id = c.business_id AND m.conversation_id = c.id AND m.role = 'customer') < ? ORDER BY c.created_at LIMIT ?`, [B, cutoffIso, safeLimit]);
+        if (ids.length) {
+          const t = nowIso();
+          const statements = ids.flatMap((row) => [
+            { sql: "DELETE FROM conversations WHERE id = ? AND business_id = ?", params: [row.id, B] },
+            { sql: "INSERT INTO audit_log (id, business_id, actor, action, target, detail, created_at) VALUES (?,?,?,?,?,?,?)", params: [newId("aud"), B, actorId, "retention_expired", row.id, json({ policy: "12_months" }), t] },
+          ]);
+          // Atomic bounded batch: a failure cannot leave a conversation deleted without its audit event.
+          await db.batch(statements);
+        }
+        return { deleted: ids.length, hasMore: ids.length === safeLimit };
+      });
+    },
+    async analytics({ from, to } = {}) {
+      const validDate = (s) => typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s)
+        && Number.isFinite(Date.parse(s + "T00:00:00.000Z"))
+        && new Date(s + "T00:00:00.000Z").toISOString().slice(0, 10) === s;
+      if (!validDate(from) || !validDate(to) || from > to) throw new DbError("invalid_data", "analytics requires a valid inclusive date range");
+      const start = from + "T00:00:00.000Z";
+      const end = new Date(Date.parse(to + "T00:00:00.000Z") + 86400000).toISOString();
+      if (Date.parse(end) - Date.parse(start) > 366 * 86400000) throw new DbError("invalid_data", "analytics range cannot exceed 366 days");
+      return guard(async () => {
+        const totals = await db.first(
+          "SELECT COUNT(*) AS sampleSize, SUM(CASE WHEN emergency = 1 THEN 1 ELSE 0 END) AS emergencyCount FROM leads WHERE business_id = ? AND created_at >= ? AND created_at < ?",
+          [B, start, end]);
+        const statuses = await db.all(
+          "SELECT status, COUNT(*) AS count FROM leads WHERE business_id = ? AND created_at >= ? AND created_at < ? GROUP BY status ORDER BY status",
+          [B, start, end]);
+        const categories = await db.all(
+          "SELECT COALESCE(issue_category, 'unspecified') AS category, COUNT(*) AS count FROM leads WHERE business_id = ? AND created_at >= ? AND created_at < ? GROUP BY COALESCE(issue_category, 'unspecified') ORDER BY count DESC, category",
+          [B, start, end]);
+        const daily = await db.all(
+          "SELECT substr(created_at, 1, 10) AS date, COUNT(*) AS leads FROM leads WHERE business_id = ? AND created_at >= ? AND created_at < ? GROUP BY substr(created_at, 1, 10) ORDER BY date",
+          [B, start, end]);
+        const outcomes = await db.first(
+          "SELECT SUM(CASE WHEN status = 'won' THEN 1 ELSE 0 END) AS won, SUM(CASE WHEN status = 'lost' THEN 1 ELSE 0 END) AS lost, SUM(CASE WHEN status IN ('won','lost') THEN 1 ELSE 0 END) AS outcomeSampleSize FROM leads WHERE business_id = ? AND created_at >= ? AND created_at < ?",
+          [B, start, end]);
+        return {
+          range: { from, to, inclusive: true },
+          sampleSize: totals.sampleSize ?? 0,
+          emergencyCount: totals.emergencyCount ?? 0,
+          statuses,
+          categories,
+          daily,
+          outcomes: { won: outcomes.won ?? 0, lost: outcomes.lost ?? 0, sampleSize: outcomes.outcomeSampleSize ?? 0 },
+          methodology: "Counts are based on leads created within the selected date range. Outcomes include only owner-entered won/lost statuses; no revenue or job value is inferred."
+        };
       });
     },
     async notificationHistory(limit = 50) {
