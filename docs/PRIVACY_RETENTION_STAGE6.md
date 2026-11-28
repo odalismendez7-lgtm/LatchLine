@@ -91,3 +91,11 @@ This wording deliberately does **not** promise that data is never shared, that A
 - Real provider payloads, their retention behavior, and deletion propagation have not been independently verified. Current provider integrations remain mock/default or unconfigured.
 - Business/account-wide deletion, full data export/deletion request workflows, and automatic retention enforcement are not implemented.
 - The append-only audit design preserves identifiers and details across deletion; audit retention is unresolved.
+
+
+## Repair work (2026-11-28)
+
+- Scheduled retention cutoff now subtracts a calendar year in UTC, clamping month-end/leap-day cases, rather than using a fixed 365-day duration.
+- Retention deletions and their minimal audit entries are now submitted as a single bounded database batch per sweep, so a failed batch should roll back both.
+- Tests added for calendar cutoff boundaries and injected retention batch failure/retry.
+- These changes remain unverified until CI passes. Hosted D1 and backup/provider retention are still not verified.
