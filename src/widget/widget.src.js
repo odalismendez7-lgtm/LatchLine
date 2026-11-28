@@ -222,7 +222,7 @@ function main() {
     const nearBottom = els.log.scrollHeight - els.log.scrollTop - els.log.clientHeight < 80;
     const have = new Map([...els.log.children].map((e) => [e.getAttribute("data-id"), e]));
     let prev = null;
-    for (const m of [{ id: 0, role: "assistant", text: S.cfg.welcome }, { id: -1, role: "system", text: "Privacy: This chat collects details to help a plumbing business review your service request. Messages may be processed by an AI service and sent to the business and configured service providers. Do not enter passwords, payment details, Social Security numbers, or unrelated sensitive information. The business is responsible for its privacy notice, retention and deletion practices." }, ...S.msgs]) {
+    for (const m of [{ id: 0, role: "assistant", text: S.cfg.welcome }, { id: -1, role: "system", text: "Privacy: This chat collects details to help a plumbing business review your service request. Messages may be processed by an AI service and shared with the business and configured service providers. Do not enter account credentials, payment details, Social Security numbers, or unrelated sensitive information. The business is responsible for its privacy notice, retention and deletion practices." }, ...S.msgs]) {
       const old = have.get(String(m.id)); have.delete(String(m.id));
       if (old && old.__sig === sigOf(m)) { prev = old; continue; }
       const el = line(m); el.__sig = sigOf(m);
