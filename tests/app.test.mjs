@@ -1,9 +1,18 @@
+describe("Stage 6 calendar retention boundary", () => {
+  test("subtracts a calendar year and clamps leap-day safely", () => {
+    assert.equal(retentionCutoff12Months(Date.parse("2026-11-28T12:00:00.000Z")), "2025-11-28T12:00:00.000Z");
+    assert.equal(retentionCutoff12Months(Date.parse("2025-02-28T12:00:00.000Z")), "2024-02-28T12:00:00.000Z");
+    assert.equal(retentionCutoff12Months(Date.parse("2024-02-29T12:00:00.000Z")), "2023-02-28T12:00:00.000Z");
+    assert.equal(retentionCutoff12Months(Date.parse("2025-03-31T12:00:00.000Z")), "2024-03-31T12:00:00.000Z");
+  });
+});
+
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { SqliteAdapter } from "../src/db/sqlite-adapter.js";
 import { migrate } from "../src/db/migrate-node.js";
 import { platformRepo, forBusiness } from "../src/db/tenant.js";
-import { createApp } from "../src/app.js";
+import { createApp, retentionCutoff12Months } from "../src/app.js";
 import { MemoryStore, DbStore } from "../src/ratelimit/limiter.js";
 import { AIRouter } from "../src/ai/router.js";
 import { MockProvider } from "../src/ai/mock.js";
