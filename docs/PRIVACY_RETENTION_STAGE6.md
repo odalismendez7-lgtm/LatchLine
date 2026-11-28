@@ -1,6 +1,6 @@
 # Privacy, Retention, and Deletion — Stage 6 Baseline
 
-**Status: founder-approved retention design; implementation and legal review still pending.** The founder approved the proposed 12-month retention period on 2026-11-27. This document is an engineering policy record, not legal advice or a claim of compliance.
+**Status: partial implementation repair committed; CI, export/deletion authorization, backup/provider review, and legal review remain pending.** The founder approved the proposed 12-month retention period on 2026-11-27. This document is an engineering policy record, not legal advice or a claim of compliance.
 
 ## Data inventory (confirmed from current implementation review)
 - Conversation messages and conversation state.
@@ -29,7 +29,7 @@
 - **Backups, platform logs and provider data:** separate retention boundaries must be disclosed; deletion from the live database cannot promise immediate deletion from backups or third parties.
 - **AI/email provider sharing:** no real provider is enabled by default; live provider setup requires accurate disclosure and configuration review.
 
-The founder approved this retention period. Automatic enforcement is **not yet enabled**; a safe, tested sweeper, explicit timestamp definition, and verification are still required.
+The founder approved this retention period. Automatic enforcement is available through an authenticated dashboard action and scheduled retention sweep, but must not be considered production-verified until CI and operational controls are confirmed. The cutoff now uses a calendar year in UTC. The sweeper fails closed for conversations with no customer-authored message timestamp; it will not infer customer activity from conversation creation or staff/assistant activity. Each bounded deletion batch and its audit entries are submitted atomically.
 
 ## Deletion dependency map (schema review)
 
@@ -99,3 +99,11 @@ This wording deliberately does **not** promise that data is never shared, that A
 - Retention deletions and their minimal audit entries are now submitted as a single bounded database batch per sweep, so a failed batch should roll back both.
 - Tests added for calendar cutoff boundaries and injected retention batch failure/retry.
 - These changes remain unverified until CI passes. Hosted D1 and backup/provider retention are still not verified.
+
+
+## Follow-up repair notes (2026-11-28)
+
+- Centralized the calendar-year UTC cutoff helper and applied it to both the scheduled retention path and the dashboard's manual retention action. This closes the previous inconsistency where the manual endpoint still used a fixed 365-day interval.
+- Changed retention selection to require a real customer-authored message timestamp. A conversation without one is retained for manual review rather than being deleted using its creation timestamp.
+- Added tests for no-customer-activity fail-closed behavior and the calendar cutoff helper.
+- The live database deletion is still not a promise of immediate removal from backups, platform logs, email/AI providers, or exported copies.
