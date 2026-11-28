@@ -276,6 +276,25 @@ describe("tenant analytics", () => {
   });
 });
 
+describe("Stage 6 retention deletion atomicity", () => {
+  test("conversation deletion and audit entry are one batch", async () => {
+    const db = fresh();
+    const { A } = await seed(db);
+    const conv = await A.conversations.create();
+    await db.run("UPDATE conversations SET created_at = ? WHERE id = ?", ["2024-01-01T00:00:00.000Z", conv.id]);
+    const originalBatch = db.batch.bind(db);
+    db.batch = async () => { throw new Error("injected failure"); };
+    await assert.rejects(A.dashboard.expireCustomerData("system_retention", "2025-01-01T00:00:00.000Z"), /injected failure/);
+    assert.ok(await db.first("SELECT id FROM conversations WHERE id = ?", [conv.id]));
+    assert.equal((await db.first("SELECT COUNT(*) n FROM audit_log WHERE action='retention_expired'")).n, 0);
+    db.batch = originalBatch;
+    const result = await A.dashboard.expireCustomerData("system_retention", "2025-01-01T00:00:00.000Z");
+    assert.equal(result.deleted, 1);
+    assert.equal(await db.first("SELECT id FROM conversations WHERE id = ?", [conv.id]), null);
+    assert.equal((await db.first("SELECT COUNT(*) n FROM audit_log WHERE action='retention_expired'")).n, 1);
+  });
+});
+
 describe("audit log", () => {
   test("records events without customer values and cannot be edited or deleted", async () => {
     const db = fresh();
