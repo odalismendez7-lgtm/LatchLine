@@ -23,15 +23,15 @@ describe("wrangler d1 migrations apply --local (the real migration tool)", { ski
   const persist = join(dir, "state");
   after(() => rmSync(dir, { recursive: true, force: true }));
 
-  test("applies all eight migrations to an empty local D1, and a second run is a clean no-op", () => {
+  test("applies all nine migrations to an empty local D1, and a second run is a clean no-op", () => {
     const first = applyMigrations({ persist, config: PROBE });
     assert.equal(first.status, 0, first.output);
-    for (const f of ["0001_init.sql", "0002_notifications.sql", "0003_accounts.sql", "0004_simulated_mail.sql", "0005_notification_variant.sql", "0006_chat_request_dedup.sql", "0007_chat_request_payload_hash.sql", "0008_structured_service_address.sql"]) assert.match(first.output, new RegExp(f.replace(".", "\\.")));
+    for (const f of ["0001_init.sql", "0002_notifications.sql", "0003_accounts.sql", "0004_simulated_mail.sql", "0005_notification_variant.sql", "0006_chat_request_dedup.sql", "0007_chat_request_payload_hash.sql", "0008_structured_service_address.sql", "0009_stage7_entitlements.sql"]) assert.match(first.output, new RegExp(f.replace(".", "\\.")));
     const second = applyMigrations({ persist, config: PROBE });
     assert.equal(second.status, 0, second.output);
     assert.match(second.output, /No migrations to apply/i);
     const d = new DatabaseSync(d1File(persist), { readOnly: true });
-    try { assert.equal(d.prepare("SELECT COUNT(*) n FROM d1_migrations").get().n, 8, "each migration recorded exactly once"); } finally { d.close(); }
+    try { assert.equal(d.prepare("SELECT COUNT(*) n FROM d1_migrations").get().n, 9, "each migration recorded exactly once"); } finally { d.close(); }
   });
 
   test("the schema wrangler/D1 produces is identical to the schema the Node test path (migrate-node.js) produces", () => {
